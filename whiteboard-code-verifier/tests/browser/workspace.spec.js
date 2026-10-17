@@ -1,15 +1,17 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { lessons } from '../../src/lessons.js';
-import { boardFile, importBoard } from './helpers.js';
+import { boardFile, importBoard, openPanel } from './helpers.js';
 
 test('loads the canvas, edits code and input, and roundtrips a downloaded board', async ({ page }, testInfo) => {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.getByRole('link', { name: 'Boardroom home' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
   await expect(page.locator('.excalidraw canvas').first()).toBeVisible();
+  await openPanel(page);
   const source = page.getByLabel(/CODE THAT RUNS/);
   await expect(source).toHaveValue(lessons[0].source);
   const edited = lessons[0].source.replace('a + b', 'a * b');
@@ -40,9 +42,12 @@ test('loads the canvas, edits code and input, and roundtrips a downloaded board'
 test('fits a phone viewport without page-level horizontal scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await openPanel(page);
   await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(lessons[0].source);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test.describe('real Docker execution', () => {
@@ -55,6 +60,7 @@ test.describe('real Docker execution', () => {
   for (const lesson of lessons) {
     test(`${lesson.title}: canvas to real program result`, async ({ page }) => {
       await page.goto('/');
+      await page.getByLabel('Demo lesson').selectOption('sum');
       await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
       await page.getByLabel('Demo lesson').selectOption(lesson.id);
       const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/run'));
@@ -75,6 +81,8 @@ test.describe('real Docker execution', () => {
 
   test('underlines the compiler error in the code that ran and marks edits stale', async ({ page }, testInfo) => {
     await page.goto('/');
+    await page.getByLabel('Demo lesson').selectOption('sum');
+    await openPanel(page);
     await page.getByLabel(/CODE THAT RUNS/).fill('int main(void) {\n    unknown_symbol;\n}\n');
     await page.getByRole('button', { name: 'Verify & run' }).click();
     await expect(page.locator('.result-status')).toContainText('Check the syntax');
@@ -92,6 +100,7 @@ test.describe('real Docker execution', () => {
   test('snippet mode runs the board text inside the template and reports lines of the full program', async ({ page }, testInfo) => {
     await page.goto('/');
     await importBoard(page, boardFile({ code: 'printf("%d\\n", 7);' }));
+    await openPanel(page);
     await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue('printf("%d\\n", 7);');
     await page.getByRole('button', { name: 'Snippet mode', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Snippet mode: build your template' });
@@ -117,33 +126,13 @@ test.describe('real Docker execution', () => {
     await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue('printf("%d\\n", 7);');
   });
 
-  test('a region becomes the frame the program is taken from and leaves annotations out', async ({ page }, testInfo) => {
-    await page.goto('/');
-    const code = '#include <stdio.h>\nint main(void) { puts("region"); return 0; }';
-    await importBoard(page, boardFile({ code, notes: [{ text: 'remember: not code', x: 640, y: 500 }] }));
-    await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(code);
-    await page.getByRole('button', { name: 'Select region' }).click();
-    const layer = page.getByTestId('region-layer');
-    const area = await layer.boundingBox();
-    await page.mouse.move(area.x + 6, area.y + 6);
-    await page.mouse.down();
-    await page.mouse.move(area.x + area.width * 0.42, area.y + area.height * 0.42, { steps: 8 });
-    await page.mouse.up();
-    await expect(page.getByRole('group', { name: 'Region selection' })).toContainText('Region selected');
-    await page.screenshot({ path: testInfo.outputPath('region-selected.png') });
-    await page.getByRole('button', { name: 'Use selection' }).click();
-    await expect(page.getByLabel('PROGRAM FRAME', { exact: true })).toContainText('Region 1');
-    await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(code);
-    await page.getByRole('button', { name: 'Verify & run' }).click();
-    await expect(page.locator('.terminal pre')).toHaveText('region\n');
-  });
-
   test('whole page frames all ink in one step', async ({ page }) => {
     await page.goto('/');
     const code = 'int main(void) { return 0; }';
     await importBoard(page, boardFile({ code }));
     await page.getByRole('button', { name: 'Transcribe whole page' }).click();
     await expect(page.getByLabel('PROGRAM FRAME', { exact: true })).toContainText('Region 1');
+    await openPanel(page);
     await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(code);
     await expect(page.getByRole('alert')).toHaveCount(0);
   });

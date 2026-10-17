@@ -1,0 +1,83 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { assistPseudocode, validatePseudocode, validatePseudocodeResult } from '../server/pseudocode.mjs';
+
+const env = { GEMINI_API_KEY: 'private-unit-key', OCR_MODEL: 'test-model' };
+const proposal = { source: '#include <stdio.h>\nint main(void) { puts("5"); return 0; }', explanation: 'Completed the C program.', issues: [{ line: 1, message: 'Added the missing entry point.' }] };
+const reply = (value) => new Response(JSON.stringify({ status: 'completed', usage: { total_tokens: 10, private: env.GEMINI_API_KEY },
+  steps: [{ type: 'model_output', content: [{ type: 'text', text: JSON.stringify(value) }] }] }));
+
+test('each assistance level uses Gemini with distinct instructions and literal bounded lesson data', async () => {
+  const prompts = [];
+  for (const level of [1, 2, 3]) {
+    const logs = [];
+    const body = { level, source: 'print 5', stdin: '1\n\n', compilerOutput: 'board.c:1: error' };
+    const result = await assistPseudocode(body, { env, logger: (entry) => logs.push(entry), fetchImpl: async (url, options) => {
+      assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
+      assert.equal(options.headers['x-goog-api-key'], env.GEMINI_API_KEY);
+      const sent = JSON.parse(options.body);
+      assert.equal(sent.store, false);
+      assert.deepEqual(JSON.parse(sent.input[0].text), { source: body.source, stdin: body.stdin, compilerOutput: body.compilerOutput });
+      assert.equal(sent.response_format.schema.properties.source.type, 'string');
+      prompts.push(sent.system_instruction);
+      return reply(proposal);
+    } });
+    assert.equal(result.source, proposal.source);
+    assert.equal(result.level, level);
+    assert.equal(result.provider, 'gemini');
+    assert.deepEqual(logs[0].usage, { total_tokens: 10 });
+    assert.ok(!JSON.stringify(logs).includes(body.source));
+    assert.ok(!JSON.stringify(logs).includes(env.GEMINI_API_KEY));
+  }
+  assert.match(prompts[0], /advice only/);
+  assert.match(prompts[1], /missing main/);
+  assert.match(prompts[2], /plain-language steps/);
+});
+
+test('rejects invalid requests before provider calls and missing credentials', async () => {
+  for (const body of [null, {}, { level: 0, source: 'x' }, { level: 1, source: '' }, { level: 1, source: 'x'.repeat(32769) },
+    { level: 2, source: 'x\0' }, { level: 3, source: 'x', stdin: 1 }, { level: 1, source: 'x', compilerOutput: 'x'.repeat(16385) }]) {
+    assert.throws(() => validatePseudocode(body));
+  }
+  await assert.rejects(assistPseudocode({ level: 2, source: 'print 5' }, { env: {} }), (error) => error.status === 503);
+});
+
+test('named teaching libraries include their actual APIs and require angle-bracket includes', async () => {
+  let instruction;
+  await assistPseudocode({ level: 3, source: 'Use queue.h to add 4 and 7, then print both.' }, {
+    env, logger: () => {}, fetchImpl: async (_url, options) => {
+      instruction = JSON.parse(options.body).system_instruction;
+      return reply(proposal);
+    },
+  });
+  assert.match(instruction, /queue_init\(Queue \*queue\)/);
+  assert.match(instruction, /#include <header.h>/);
+  assert.ok(!instruction.includes('BOARD_LIST_H'));
+});
+
+test('rejects malformed, fenced, oversized and incomplete proposals before execution', async () => {
+  for (const value of [null, {}, { ...proposal, source: '```c\nint main(){}\n```' }, { ...proposal, source: 'x'.repeat(32769) },
+    { ...proposal, issues: [{ line: 2, message: 'unknown line' }] }, { ...proposal, issues: [{ line: -1, message: 'x' }] }]) {
+    assert.throws(() => validatePseudocodeResult(value, 'one line'), (error) => error.status === 502);
+  }
+  await assert.rejects(assistPseudocode({ level: 3, source: 'print 5' }, { env, logger: () => {}, fetchImpl: async () => reply(null) }), /proposal/);
+  await assert.rejects(assistPseudocode({ level: 3, source: 'print 5' }, { env, logger: () => {}, fetchImpl: async () =>
+    new Response(JSON.stringify({ status: 'in_progress' })) }), /did not finish/);
+  await assert.rejects(assistPseudocode({ level: 3, source: 'print 5' }, { env, logger: () => {}, fetchImpl: async () =>
+    new Response('private malformed provider text') }), (error) => error.status === 502 && error.diagnostic.reason === 'invalid_response');
+});
+
+test('reports quota evidence and timeouts without leaking private provider messages', async () => {
+  const logs = [];
+  await assert.rejects(assistPseudocode({ level: 2, source: 'print 5' }, { env, logger: (entry) => logs.push(entry), fetchImpl: async () =>
+    new Response(JSON.stringify({ error: { message: `token quota private ${env.GEMINI_API_KEY}` } }), { status: 429 }) }), (error) => {
+    assert.equal(error.status, 429);
+    assert.equal(error.diagnostic.quotaStatus, 'token_limit_reached');
+    assert.ok(!error.message.includes(env.GEMINI_API_KEY));
+    return true;
+  });
+  await assert.rejects(assistPseudocode({ level: 3, source: 'print 5' }, { env, logger: () => {}, fetchImpl: async () => {
+    throw new DOMException('private timeout', 'TimeoutError');
+  } }), (error) => error.status === 504 && error.diagnostic.quotaStatus === 'unknown');
+  assert.ok(!JSON.stringify(logs).includes(env.GEMINI_API_KEY));
+});

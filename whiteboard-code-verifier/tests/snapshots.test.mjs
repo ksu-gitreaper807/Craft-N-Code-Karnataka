@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, rename, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSnapshotStore } from '../server/snapshots.mjs';
+import { extractProgram, programSignature } from '../src/board.js';
 import { inkFingerprint } from '../src/handwriting.js';
 
 const execute = promisify(execFile);
@@ -25,7 +26,7 @@ async function archive(t) {
   return { root, parent, store: createSnapshotStore({ root, now: () => new Date('2026-10-17T12:30:05.000Z') }) };
 }
 
-test('saves exactly three files with literal source/input, dated unique folders, and real Git history', async (t) => {
+test('saves a portable bundle with literal source/input, dated unique folders, and real Git history', async (t) => {
   const { root, store } = await archive(t);
   assert.deepEqual(await store.list(), []);
   const first = await store.save({ title: 'Linked list / lesson', scene: scene() });
@@ -33,7 +34,7 @@ test('saves exactly three files with literal source/input, dated unique folders,
   assert.match(first.id, /^2026-10-17\/12-30-05-linked-list-lesson-[a-f0-9]{8}$/);
   assert.notEqual(first.id, second.id);
   assert.match(first.commit, /^[a-f0-9]{40,64}$/);
-  assert.deepEqual((await readdir(join(root, first.id))).sort(), ['board.c', 'board.excalidraw', 'input.txt']);
+  assert.deepEqual((await readdir(join(root, first.id))).sort(), ['.dockerignore', 'Dockerfile', 'board.c', 'board.excalidraw', 'build.sh', 'input.txt', 'lib.lock', 'replay.py', 'runner.py']);
   assert.equal(await readFile(join(root, first.id, 'board.c'), 'utf8'), source);
   assert.equal(await readFile(join(root, first.id, 'input.txt'), 'utf8'), '3 5\n\n');
   const history = await store.list();
@@ -59,6 +60,7 @@ test('requires current handwriting confirmation and saves the reviewed source wh
   const saved = await store.save({ scene: board });
   assert.equal(await readFile(join(root, saved.id, 'board.c'), 'utf8'), reviewed);
   assert.equal((await store.read(saved.id)).elements.find((el) => el.id === 'ink').type, 'freedraw');
+  assert.deepEqual(JSON.parse(await readFile(join(root, saved.id, 'ocr.json'), 'utf8')), board.verifier.ocr);
   board.elements.at(-1).points.push([30, 30]);
   await assert.rejects(store.save({ scene: board }), /confirm/);
 });
@@ -114,6 +116,134 @@ test('serializes saves and leaves staged application work untouched', async (t) 
   const saved = await first;
   assert.ok(saved.commit);
   assert.equal(await git(parent, 'diff', '--cached', '--name-only'), 'notes.txt');
-  assert.equal((await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).split('\n').length, 3);
+  assert.equal((await git(root, 'ls-tree', '-r', '--name-only', 'HEAD')).split('\n').length, 9);
   assert.equal(await git(root, 'remote'), '');
+});
+
+test('vendors only referenced curated headers and their internal dependencies, and refuses changed files before replay', async (t) => {
+  const { root, parent, store } = await archive(t);
+  const board = scene();
+  board.elements[1].text = '#include <queue.h>\r\n/* #include <stack.h> */\r\nint main(void) { Queue q; queue_init(&q); queue_free(&q); }\r\n';
+  const saved = await store.save({ scene: board });
+  const folder = join(root, saved.id);
+  assert.deepEqual((await readdir(join(folder, 'lib'))).sort(), ['board_contract.h', 'queue.h']);
+  assert.equal(await readFile(join(folder, 'board.c'), 'utf8'), board.elements[1].text);
+  const comparison = await store.libraries(saved.id);
+  assert.equal(comparison.legacy, false);
+  assert.deepEqual(comparison.headers.map((header) => header.file), ['board_contract.h', 'queue.h']);
+  assert.ok(comparison.headers.every((header) => !header.changed && header.saved === header.current));
+  await assert.rejects(store.libraries('../../.env'), (error) => error.status === 404);
+  const manifest = JSON.parse(await readFile(join(folder, 'lib.lock'), 'utf8'));
+  assert.match(manifest.compilerImage, /@sha256:[a-f0-9]{64}$/);
+  assert.match(manifest.files['lib/queue.h'], /^[a-f0-9]{64}$/);
+  assert.equal(await git(root, 'show', `HEAD:${saved.id}/lib/queue.h`),
+    (await readFile(new URL('../runner/lib/queue.h', import.meta.url), 'utf8')).trim());
+  const run = (...args) => execute('bash', [join(folder, 'build.sh'), ...args]);
+  assert.match((await run('--verify')).stdout, /integrity verified/);
+  const portable = join(parent, 'copied lesson');
+  await cp(folder, portable, { recursive: true });
+  assert.match((await execute('bash', [join(portable, 'build.sh'), '--verify'], { cwd: parent })).stdout, /integrity verified/);
+  await writeFile(join(folder, 'lib/queue.h'), 'tampered');
+  await assert.rejects(run(), (error) => error.code === 1 && /integrity check failed: lib\/queue.h/.test(error.stderr));
+  assert.equal(await readFile(join(folder, 'board.c'), 'utf8'), board.elements[1].text);
+});
+
+test('records OCR review provenance and only a result matching the saved program', async (t) => {
+  const { root, store } = await archive(t);
+  const board = scene();
+  const program = extractProgram(board.elements, 'frame');
+  board.verifier.result = { source: program.source, stdin: program.stdin,
+    signature: programSignature(program, 'frame'), status: 'compile_error', diagnostics: [] };
+  const saved = await store.save({ scene: board });
+  const evidence = JSON.parse(await readFile(join(root, saved.id, 'result.json'), 'utf8'));
+  assert.equal(evidence.provenance, 'browser-reported');
+  assert.equal(evidence.result.status, 'compile_error');
+  board.elements[1].text += '\n// edited since run';
+  const stale = await store.save({ scene: board });
+  await assert.rejects(readFile(join(root, stale.id, 'result.json')), { code: 'ENOENT' });
+});
+
+async function waitForSync(store, expected) {
+  for (let i = 0; i < 100; i++) {
+    const status = await store.syncStatus();
+    if (status.state === expected) return status;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal((await store.syncStatus()).state, expected);
+}
+
+test('pushes committed lessons to a configured archive remote and recovers after a restart', async (t) => {
+  const { root, parent, store } = await archive(t);
+  assert.equal((await store.syncStatus()).state, 'empty');
+  const first = await store.save({ scene: scene() });
+  assert.equal((await store.syncStatus()).state, 'local_only');
+  const remote = join(parent, 'remote.git');
+  await execute('git', ['init', '--bare', '--quiet', remote]);
+  await git(root, 'remote', 'add', 'origin', remote);
+  await store.retrySync();
+  await waitForSync(store, 'synced');
+  assert.equal(await git(remote, 'rev-parse', 'refs/heads/boardroom-lessons'), first.commit);
+
+  const offline = join(parent, 'offline.git');
+  await rename(remote, offline);
+  const second = await store.save({ scene: scene() });
+  await store.retrySync();
+  await waitForSync(store, 'error');
+  assert.equal(await git(root, 'rev-parse', 'HEAD'), second.commit);
+  assert.equal(await git(root, 'rev-parse', 'refs/boardroom-sync/origin'), first.commit);
+
+  // The sync cursor lives in Git, so a new server process resumes from the local commits.
+  await rename(offline, remote);
+  const restarted = createSnapshotStore({ root });
+  restarted.startSync();
+  t.after(() => restarted.stopSync());
+  await restarted.retrySync();
+  await waitForSync(restarted, 'synced');
+  assert.equal(await git(remote, 'rev-parse', 'refs/heads/boardroom-lessons'), second.commit);
+});
+
+test('a divergent remote cannot overwrite local or remote lesson history', async (t) => {
+  const { root, parent, store } = await archive(t);
+  const first = await store.save({ scene: scene() });
+  const remote = join(parent, 'remote.git');
+  await execute('git', ['init', '--bare', '--quiet', remote]);
+  await git(root, 'remote', 'add', 'origin', remote);
+  await store.retrySync();
+  await waitForSync(store, 'synced');
+  const other = join(parent, 'other');
+  await execute('git', ['clone', '--quiet', '--branch', 'boardroom-lessons', remote, other]);
+  await writeFile(join(other, 'other.txt'), 'another teacher\n');
+  await git(other, 'add', 'other.txt');
+  await execute('git', ['-C', other, '-c', 'user.name=Teacher', '-c', 'user.email=teacher@localhost', 'commit', '--quiet', '-m', 'Other lesson']);
+  await git(other, 'push', 'origin', 'HEAD:boardroom-lessons');
+  const remoteCommit = await git(remote, 'rev-parse', 'refs/heads/boardroom-lessons');
+  const local = await store.save({ scene: scene() });
+  await store.retrySync();
+  await waitForSync(store, 'error');
+  assert.equal(await git(remote, 'rev-parse', 'refs/heads/boardroom-lessons'), remoteCommit);
+  assert.equal(await git(root, 'rev-parse', 'HEAD'), local.commit);
+  assert.equal(await git(root, 'rev-parse', 'refs/boardroom-sync/origin'), first.commit);
+});
+
+test('a lesson saved during an in-flight push is sent afterward', async (t) => {
+  const { root, parent, store } = await archive(t);
+  const first = await store.save({ scene: scene() });
+  const remote = join(parent, 'remote.git');
+  await execute('git', ['init', '--bare', '--quiet', remote]);
+  // Delay the remote transaction so the second save overlaps the first push.
+  await writeFile(join(remote, 'hooks/pre-receive'), '#!/bin/sh\nsleep 1\n', { mode: 0o755 });
+  await git(root, 'remote', 'add', 'origin', remote);
+  store.startSync();
+  t.after(() => store.stopSync());
+  for (let i = 0; i < 100 && (await store.syncStatus()).state !== 'syncing'; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal((await store.syncStatus()).state, 'syncing');
+  const second = await store.save({ scene: scene() });
+  assert.notEqual(first.commit, second.commit);
+  for (let i = 0; i < 300 && (await store.syncStatus()).state !== 'synced'; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal((await store.syncStatus()).state, 'synced');
+  assert.equal(await git(remote, 'rev-parse', 'refs/heads/boardroom-lessons'), second.commit);
 });

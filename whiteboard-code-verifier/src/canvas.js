@@ -92,11 +92,6 @@ const centreIn = (el, rect) => {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 };
 
-export function describeRegion(api, rect) {
-  const members = api.getSceneElements().filter((el) => isInk(el) && centreIn(el, rect));
-  return { strokes: members.filter((el) => el.type === 'freedraw').length, texts: members.filter((el) => el.type === 'text').length };
-}
-
 export function inkBounds(api, padding = 32) {
   const ink = api.getSceneElements().filter(isInk);
   if (!ink.length) return null;
@@ -121,19 +116,4 @@ export function createRegionFrame(api, rect) {
   api.updateScene({ elements: [...current.filter((el) => !members.includes(el)), ...moved, sized] });
   api.setActiveTool({ type: 'selection' });
   return { id, strokes: members.filter((el) => el.type === 'freedraw').length, texts: members.filter((el) => el.type === 'text').length };
-}
-
-export function addHandwritingFrame(api) {
-  const current = api.getSceneElements();
-  const frames = current.filter((el) => el.type === 'frame');
-  const x = frames.length ? Math.max(...frames.map((el) => el.x + el.width)) + 120 : 48;
-  const id = `handwriting-${crypto.randomUUID()}`;
-  const [frame] = convertToExcalidrawElements([{
-    type: 'frame', id, name: 'Handwritten program', children: [], x, y: 64, width: 710, height: 530,
-  }], { regenerateIds: false });
-  const positioned = { ...frame, x, y: 64, width: 710, height: 530 };
-  api.updateScene({ elements: [...current, positioned], appState: { currentItemStrokeColor: CODE_COLOR } });
-  api.scrollToContent(positioned, { fitToContent: true, maxZoom: 1 });
-  api.setActiveTool({ type: 'freedraw' });
-  return id;
 }

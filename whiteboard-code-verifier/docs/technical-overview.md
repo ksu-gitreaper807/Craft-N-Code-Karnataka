@@ -4,7 +4,7 @@ This document describes the implementation currently in `whiteboard-code-verifie
 
 ## 1. Purpose and target user
 
-Boardroom is an executable digital whiteboard for teachers explaining C programming. A teacher writes or types a program inside a whiteboard frame, supplies input in blue, and runs the program without moving the lesson into a separate IDE. Compiler messages and runtime diagnostics point back to locations on the board.
+Boardroom is an executable digital whiteboard for teachers explaining C programming. A teacher writes or types on a blank canvas, selects a code/input region from the top bar, supplies input in blue, and runs the program without moving the lesson into a separate IDE. Compiler messages and runtime diagnostics point back to locations on the board.
 
 The teaching goal is to make classroom examples verifiable: demonstrate working code, expose syntax and memory mistakes, and connect abstractions to their implementation. The current input is an Excalidraw canvas. A camera pipeline for physical whiteboards is outside the implemented scope.
 
@@ -19,7 +19,7 @@ The teaching goal is to make classroom examples verifiable: demonstrate working 
 | Development/build | Vite 8.2.2 | Frontend development server, API proxy, and production assets |
 | API runtime | Node.js 22.12+ | HTTP endpoints, validation, Gemini requests, and Docker orchestration |
 | Handwriting recognition | Gemini API; default `gemini-3.8-flash` | Image transcription into structured code/input lines |
-| Execution boundary | Linux Docker Engine | Disposable, resource-constrained containers for submitted C programs |
+| Execution boundary | Linux Docker Engine locally; configured Wandbox service on Vercel | Isolated C execution outside the application process |
 | Compiler image | `gcc:14.2.0-bookworm` | GCC toolchain and Debian-based execution environment |
 | Runner implementation | Python 3 standard library | Compilation, input delivery, deadlines, output collection, and diagnostic parsing |
 | Program language | C11 | Full programs compiled with warnings and runtime sanitizers |
@@ -28,30 +28,31 @@ The teaching goal is to make classroom examples verifiable: demonstrate working 
 
 Frontend dependencies are pinned in `package.json` and `package-lock.json`. The Dockerfile pins a compiler image tag, rather than an immutable image digest. Node's API and the Python runner use built-in modules; there is no Express server or Gemini SDK dependency. The backend calls Gemini through `fetch` and its REST API.
 
+The Vercel deployment also includes same-origin Functions for health, OCR, Gemini pseudocode assistance, and C execution. They require a teacher access token. Vercel has no persistent Docker or Git archive, so its C compiler is an explicitly configured third-party Wandbox service and its Snapshot/History actions are unavailable. See [Vercel serverless deployment](vercel-serverless.md). The Docker implementation below remains the full local/persistent-server mode; its sanitizers and resource limits do not describe the hosted compiler.
+
 ## 3. Architecture and data flow
 
 ```mermaid
 flowchart TD
-    A[Teacher writes inside an Excalidraw frame] --> B{Input channel contains handwriting?}
-    B -->|No| C[Extract exact typed text and line geometry]
-    B -->|Yes| D[Capture separate code and input PNGs]
-    D --> E[Node API sends images to Gemini]
-    E --> F[Validate structured transcription]
-    F --> G[Teacher edits and confirms the transcription]
-    C --> H[Teacher selects Verify and run]
-    G --> H
-    H --> I[Node API validates source and input]
-    I --> J[Disposable Docker container]
-    J --> K[Python invokes GCC, then the compiled program]
-    K --> L[Output, diagnostics, and teaching notes]
-    L --> M[React displays results and highlights board lines]
+    A[Teacher writes on a blank canvas] --> B[Select code and input region]
+    B --> C{Contains handwriting?}
+    C -->|No| D[Extract literal typed text]
+    C -->|Yes| E[Gemini OCR then teacher confirmation]
+    D --> F[Select level and click run]
+    E --> F
+    F --> G{Pseudocode level}
+    G -->|1| H[Compile original C and ask Gemini for advice]
+    G -->|2 or 3| I[Gemini completes C or translates an algorithm]
+    I --> J[Compile displayed Gemini C]
+    H --> K[Real output and compiler diagnostics]
+    J --> K
 ```
 
 The browser owns the working scene and its review state. The Node process owns credentials and coordinates external services. The container owns compilation and execution. Gemini receives relevant image crops; it does not decide whether a program is correct. GCC and runtime tools supply the execution evidence.
 
 ## 4. Whiteboard and source extraction
 
-One Excalidraw frame represents one program. The teacher selects which frame to verify.
+The initial scene is empty. **Select code & input** activates Excalidraw’s native frame tool, allowing the teacher to drag around existing code and optional blue stdin. The new frame becomes the selected program; writing outside it remains excluded. Demo lessons remain available through the lesson selector.
 
 The workspace fills the browser viewport beneath compact controls. Browser fullscreen and a hideable side panel provide more drawing space. The panel divider supports pointer dragging and keyboard resizing. Writing frames have explicit width/height controls, a **More room** action, and **Fit frame** navigation. Editing typed source in the side panel grows the frame to contain the program and positions typed stdin below it. Shrinking cannot clip existing frame contents. The source textarea also supports vertical resizing.
 
@@ -62,6 +63,12 @@ The workspace fills the browser viewport beneath compact controls. Browser fulls
 For typed text, `src/board.js` orders text elements by position and preserves their text, including blank lines. It also constructs a source map from compiler line numbers to text-element coordinates. Typed-only channels bypass OCR entirely.
 
 For handwritten channels, `src/capture.js` exports the relevant strokes and any text in that same channel. Code and stdin are captured separately, with padding and a white background. Frame borders and verifier overlays are excluded. Exported images are scaled to a maximum dimension of 1,800 pixels; the API accepts PNGs up to 2,048 × 2,048.
+
+### Gemini pseudocode levels
+
+`src/pseudocode.js` defines a three-stop slider. Level 1 compiles original C and then asks Gemini for corrections using source and compiler context. Level 2 completes near-C, including missing boilerplate and punctuation. Level 3 translates an algorithm or prose into a small C demonstration. Levels 2–3 compile the validated Gemini source automatically after the explicit run action and display it with real compiler results. Original board content remains intact. Typed users can explicitly apply the displayed C to the board.
+
+`server/pseudocode.mjs` uses the same Gemini Interactions API, key, and model as OCR. It enforces input/output bounds, validates structured C/explanation/issue fields, and logs only safe duration, quota, and token metadata. `server/gemini-response.mjs` shares bounded response parsing and quota classification with OCR. Both local `/api/pseudocode` and the authenticated Vercel function prepare C without executing it. The browser uses the separate `/api/run` endpoint for execution. Handwritten source must first be transcribed and confirmed. Scene fingerprints prevent a changed board from launching pending generated C; changing the level marks previous output stale. Generated C has its own line numbers and never highlights unrelated board lines. Cases at Levels 2–3 uses the current generated source.
 
 ## 5. OCR and teacher review
 
@@ -118,7 +125,9 @@ Typed source lines map directly to element geometry. OCR line boxes project thro
 
 The bundled header-only libraries provide an integer stack (`stack.h`), a singly linked integer list (`linked_list.h`), a growing circular integer queue (`queue.h`), and binary search with lower/upper bounds on sorted arrays (`search.h`). These are project-provided teaching extensions rather than ISO C standard-library headers. Public operation macros pass `__LINE__` so contract failures identify the teacher's callsite. The **Libraries** tab exposes the compiled header sources, method lists, and runnable examples. See the [C library reference](c-libraries.md) for APIs, ownership rules, preconditions, and complexity.
 
-Teaching notes are deterministic pattern matches for operations such as `malloc`, `free`, `scanf`, and stack operations. The current implementation does not use an AST parser or an LLM to generate these notes. The memory demonstration visualizes actual addresses printed by its program; it does not inspect arbitrary process memory or determine glibc heap/mmap regions.
+Teaching notes are deterministic pattern matches for operations such as `malloc`, `free`, `realloc`, `scanf`, `fgets`, `memcpy`, and stack operations. Comments and string literals are ignored. The current implementation does not use an AST parser or an LLM to generate these notes. The memory demonstration visualizes actual addresses printed by its program; it does not inspect arbitrary process memory or determine glibc heap/mmap regions.
+
+The **Cases** tab sends up to five independent input cases through the existing Docker-only run endpoint, sequentially. Each case has an expected status and optional exact stdout check, including intentional compiler/runtime failures. The UI associates results with the board signature and marks them stale after edits. Case definitions are browser-session state; they do not alter the board's blue stdin or the snapshot bundle.
 
 Six starter lessons demonstrate input/output, a use-after-free error, an empty-stack contract failure, linked-list traversal/insertion, FIFO queue operations, and binary search with duplicate bounds. Rule-based teaching notes also explain list ownership, queue growth, and the sorted-array search precondition.
 
@@ -133,18 +142,25 @@ Six starter lessons demonstrate input/output, a use-after-free error, an empty-s
 | `POST /api/snapshots` | Save a dated lesson folder and local Git commit from the supplied scene |
 | `GET /api/snapshots` | List the latest 30 snapshot commits |
 | `GET /api/snapshots/<id>` | Read the committed Excalidraw scene for a saved lesson |
+| `GET /api/snapshots/<id>/libraries` | Compare allowlisted headers committed with that lesson to the current application copies |
+| `GET /api/snapshots/sync` | Report local and remote lesson history sync state |
+| `POST /api/snapshots/sync` | Queue an immediate push retry when an archive remote is configured |
 
 OCR permits one request in flight and six attempts per minute, with a 4 MiB request-body limit and a 60-second provider deadline. Execution permits two requests in flight and 20 attempts per minute. These limits are process-local and reset when the server restarts.
 
 OCR failures include safe diagnostic metadata in the API response and an expandable UI panel. The backend logs `[ocr:gemini]` records with HTTP status, duration, quota classification, and numeric per-request token usage on success. Provider-reported token limits, generic quota/rate limits, and depleted credits are distinguished; a timeout leaves quota status unknown. Logs omit credentials, images, transcriptions, and raw error payloads. Remaining project quota must be checked in AI Studio.
 
-The server binds to loopback and checks request hosts and origins. The local `.env` contains `GEMINI_API_KEY` and optional `OCR_MODEL`; it is ignored by Git. Keys are never prefixed with `VITE_`, sent to the browser, or mounted into execution containers. `PORT` overrides the API's default port of 8787. A health response indicates that OCR credentials are configured, not that every future provider request will succeed.
+The server binds to loopback and checks request hosts and origins. A trusted hosted frontend can use an HTTPS reverse proxy, exact `BOARDROOM_APP_ORIGIN`, and `BOARDROOM_API_TOKEN`; this enables CORS preflight and token checks on every API request. The browser receives the token from the teacher at runtime and keeps it in session storage. Only the public API origin uses a `VITE_` build variable. The API server's ignored `.env` contains `GEMINI_API_KEY`, optional `OCR_MODEL`, and hosted-access settings. Credentials are not mounted into execution containers. `PORT` overrides the API's default port of 8787. A health response indicates that OCR credentials are configured, not that every future provider request will succeed. See [Docker API deployment](docker-api-deployment.md).
 
 ## 9. Storage and repository organization
 
 There is no application database, user-account system, or cloud lesson store. The working board is held in browser application state. Teachers can download its Excalidraw-compatible scene or use **Snapshot** to save `board.excalidraw`, `board.c`, and `input.txt` on the API server. Snapshot folders are grouped by UTC date, with a time/title/unique suffix for each save. Source and input are derived from the selected frame; handwritten source requires a matching confirmed transcription. Saving does not require successful compilation or a working Docker runner.
 
-The archive is a separate local Git repository under `snapshots/`, initialized on first save. Each snapshot creates one commit containing only its three files. **History** lists the latest 30 commits and opens their saved scenes. Opening restores the selected frame but requires fresh execution and, for handwriting, review. Git failures preserve the saved files and produce a visible warning. `SNAPSHOT_DIR` can relocate the archive. There is no automatic remote push, header vendoring, library lockfile, or frozen build script in this basic implementation.
+The archive is a separate local Git repository under `snapshots/`, initialized on first save. Each snapshot creates one commit containing its board files and replay bundle. **History** lists the latest 30 commits and opens their saved scenes. Opening restores the selected frame but requires fresh execution and, for handwriting, review. Git failures preserve the saved files and produce a visible warning. `SNAPSHOT_DIR` can relocate the archive. New snapshots vendor referenced curated headers and their trusted internal dependencies into `lib/`, freeze `runner.py` (including compilation flags), and save a `lib.lock` manifest with SHA-256 file hashes and an immutable GCC image reference. `build.sh` invokes the standard-library `replay.py` to check integrity before a Docker build and constrained run. No submitted program executes on the host; replay uses no host mounts and disables container networking. The image must be available locally or downloadable for the first build. A copied snapshot can replay without the application checkout.
+
+Snapshot creation remains independent of compilation, Docker, and OCR credentials. Literal includes are scanned conservatively (including inactive conditional branches), with comment/continuation handling; standard headers are supplied by the pinned compiler image. `ocr.json` retains confirmed recognition/review provenance when present. A matching current result is also saved as browser-reported `result.json`; it is historical evidence, not trusted verification. All files are committed together, while Git failures still preserve written files. Manifest hashes detect changes relative to the manifest, not malicious replacement of the manifest and scripts.
+
+Existing three-file snapshots remain readable. Opening History restores an editable scene and uses current application libraries for subsequent UI execution; frozen replay currently uses the saved shell script. The History tab can read each committed header beside the current copy and show whether it changed; old three-file snapshots report that no bundle is available. Git synchronization pushes committed lessons to the `boardroom-lessons` branch when the snapshot repository has an `origin` remote. Local commits serve as the durable queue; a private Git ref records the last successful push. Sync retries on server startup, after saves, and every minute. Pushes never force an update, so remote divergence requires manual resolution. The History tab reports status and offers a retry action. Library semver management remains unimplemented.
 
 ```text
 src/                 React UI, board extraction, capture, review, and overlays
@@ -178,7 +194,8 @@ Development serves the frontend at `http://127.0.0.1:5173` and the API at `http:
 | `npm run test:docker` | Actual container lessons, EOF handling, timeout, output limits, and leak detection |
 | `npm run test:browser` | Production frontend, review workflow, import/export, responsive layout, and real Docker runs |
 | `npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png` | Opt-in live Gemini request; prints unconfirmed text without executing it |
+| `npm run benchmark:ocr -- /path/to/private/manifest.json` | Opt-in live Gemini measurements against private classroom samples |
 
-Implementation verification passed 51 Node/Python tests and 23 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public header browsing, all six examples, and saving/reopening real Git-backed snapshots. Snapshot failure cases preserve written files and unrelated staged application changes. The browser suite stubs OCR responses explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
+Implementation verification passed 73 Node/Python tests and 38 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public and committed header browsing, multiple input cases, all six examples, and saving/reopening real Git-backed snapshots. Snapshot failure cases preserve written files and unrelated staged application changes. The browser suite stubs OCR and Gemini code assistance explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
 
-These results establish the working integration. Human handwriting accuracy, critical-symbol error rates, and correction time still require a benchmark on genuine classroom samples. Other material limits are full-C-program input only, restricted includes, approximate handwriting highlights, no automatic code repair, no collaboration or authentication, and local-only deployment. Caveman gateway observability is not connected in the current implementation.
+These results establish the working integration. The new benchmark command computes character, line, and critical-symbol errors from private sample images and gold transcriptions, plus optional teacher-reported correction time; no genuine classroom samples have been provided or measured. Other material limits are restricted includes, approximate handwriting highlights, unbenchmarked Gemini code-generation quality, browser-session-only input cases, no collaboration or individual authentication, and no public multi-tenant deployment. Caveman gateway observability is not connected in the current implementation.

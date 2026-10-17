@@ -2,6 +2,7 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } f
 import { captureHandwriting } from './capture.js';
 import { extractProgram } from './board.js';
 import { inkFingerprint, makeReviewDraft, reviewedProgram } from './handwriting.js';
+import { apiFetch } from './api.js';
 
 const HandwritingPanel = forwardRef(function HandwritingPanel({
   api, frameId, fingerprint, configuration, hasInk,
@@ -39,7 +40,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
       const snapshotFingerprint = inkFingerprint(snapshot, frameId);
       const typed = extractProgram(snapshot, frameId);
       const captures = await captureHandwriting(api, snapshot, frameId);
-      const response = await fetch('/api/ocr', {
+      const response = await apiFetch('/api/ocr', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
         body: JSON.stringify(Object.fromEntries(Object.entries(captures).map(([channel, capture]) => [channel, capture.dataUrl]))),
       });
@@ -82,9 +83,9 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
   return <section className="handwriting-panel" aria-label="Handwriting recognition and review">
     <h3>Read the ink. Check the code.</h3>
     <p className="panel-help">Read sends black and blue ink from this frame to Google Gemini. Review every line before compiling. Other annotation colors stay out of the images.</p>
-    <button className="ocr-read-button" onClick={read} disabled={!api || !hasInk || busy}>{busy ? 'Reading handwriting…' : 'Read handwriting'}</button>
+    <button className="ocr-read-button" onClick={read} disabled={!api || !hasInk || !configuration?.available || busy}>{busy ? 'Reading handwriting…' : 'Read handwriting'}</button>
     {!configuration?.available && <div className="runner-notice">{configuration?.message ?? 'Checking OCR configuration…'}</div>}
-    {!hasInk && <p className="panel-help">Choose “New handwritten board”, then write with “Pen: code” or “Pen: input”.</p>}
+    {!hasInk && <p className="panel-help">Write with “Pen: code” or “Pen: input”, then use “Select code & input” in the top bar and drag around your writing.</p>}
     {error && <div className="error-notice" role="alert">{error}</div>}
     {error && diagnostic && <details className="raw-output"><summary>Gemini OCR diagnostics</summary>
       <pre>{JSON.stringify(diagnostic, null, 2)}</pre>
@@ -96,7 +97,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
       <p className="ocr-provenance">{draft.raw.provider} · {draft.raw.model} · {draft.raw.durationMs} ms</p>
       <p className="panel-help">“Check” marks model-reported ambiguity, not a measured confidence score. Preview boxes are approximate.</p>
       {['code', 'stdin'].map((channel) => <div className="ocr-channel" key={channel}>
-        <h4>{channel === 'code' ? 'C source' : 'Standard input'}</h4>
+        <h4>{channel === 'code' ? 'Code or algorithm' : 'Standard input'}</h4>
         {draft.captures[channel] && <div className="ocr-preview-scroll"><div className="ocr-preview">
           <img src={draft.captures[channel].dataUrl} alt={channel === 'code' ? 'Captured code handwriting' : 'Captured input handwriting'} />
           {selected.channel === channel && draft[channel][selected.index]?.box && <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"><rect
@@ -123,7 +124,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
       </div>)}
       <label className="ocr-confirm-check"><input type="checkbox" checked={acknowledged} disabled={Boolean(stale) || busy} onChange={(event) => setAcknowledged(event.target.checked)} />I checked the code and input against the handwriting.</label>
       <button className="ocr-confirm-button" disabled={!acknowledged || Boolean(stale) || busy} onClick={confirm}>Use confirmed code</button>
-      <p className="panel-help">Confirmation keeps the original ink. Compilation happens only when you click Verify &amp; run.</p>
+      <p className="panel-help">Confirmation keeps the original ink. Use the run button at your selected pseudocode level to compile.</p>
     </>}
   </section>;
 });

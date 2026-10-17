@@ -18,7 +18,12 @@ export function boardFile({ code, stdin, notes = [] }) {
 
 // The file input ignores a board until Excalidraw has finished loading.
 export async function importBoard(page, file) {
-  await page.getByRole('button', { name: 'Verify & run' }).waitFor();
-  await page.waitForFunction(() => !document.querySelector('.run-button')?.disabled);
+  await page.waitForFunction(() => document.querySelector('[aria-label="Open board"]') && !document.querySelector('[aria-label="Open board"]').disabled);
   await page.locator('input[type=file]').setInputFiles(file);
+}
+
+// The code panel starts closed so the board keeps the whole screen.
+export async function openPanel(page) {
+  const show = page.getByRole('button', { name: 'Show panel', exact: true });
+  if (await show.count()) await show.click();
 }

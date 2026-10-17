@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/pseudocode.js": { "maxDuration": 60, "includeFiles": "runner/lib/*.h" },
+    "api/ocr.js": { "maxDuration": 60 },
+    "api/run.js": { "maxDuration": 30, "includeFiles": "runner/lib/*.h" }
+  }
+}

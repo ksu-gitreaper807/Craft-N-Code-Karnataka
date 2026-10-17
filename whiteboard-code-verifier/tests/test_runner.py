@@ -18,6 +18,15 @@ def execute_fixture(payload):
 
 
 class ParsingTests(unittest.TestCase):
+    def test_teaching_notes_cover_memory_and_input_without_reading_comments_or_strings(self):
+        source = ('// memcpy(fake)\nchar *message = "fgets(fake)";\n'
+                  'void *next = realloc(ptr, 32);\nfgets(line, sizeof line, stdin);\nmemcpy(dst, src, 4);')
+        titles = [note['title'] for note in runner.teaching_notes(source)]
+        self.assertIn('Keep the old allocation on failure', titles)
+        self.assertIn('Bounded line input', titles)
+        self.assertIn('Copies need valid ranges', titles)
+        self.assertEqual(sum(title == 'Copies need valid ranges' for title in titles), 1)
+
     def test_rejects_untrusted_include_forms(self):
         for source in ['#include "/etc/passwd"', '#include </etc/passwd>', '#include HEADER',
                        '#include_next <stdio.h>', '#import <stdio.h>', '#embed "/etc/passwd"',

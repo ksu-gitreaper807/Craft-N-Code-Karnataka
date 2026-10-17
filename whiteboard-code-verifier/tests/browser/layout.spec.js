@@ -2,33 +2,47 @@ import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { lessons } from '../../src/lessons.js';
 import { libraries } from '../../src/libraries.js';
+import { openPanel } from './helpers.js';
 
-test('fills the viewport, resizes the dock with mouse and keyboard, and focuses the board', async ({ page }, testInfo) => {
+test('keeps the board clean, opens the code panel on demand, and resizes it with mouse and keyboard', async ({ page }, testInfo) => {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
   const canvas = page.locator('.canvas-container');
   const before = await canvas.boundingBox();
-  expect(before.x).toBeGreaterThan(60);
-  expect(before.x).toBeLessThan(100);
-  expect(before.width).toBeGreaterThan(1300);
-  expect(before.height).toBeGreaterThan(380);
+  // Layout B: the board spans the window width, and nothing floats over it until a pen is chosen.
+  expect(before.x).toBe(0);
+  expect(before.width).toBe(1440);
+  expect(before.height).toBeGreaterThan(700);
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+  await expect(page.getByRole('complementary')).toBeHidden();
+  await expect(page.locator('.shapes-section')).toBeHidden();
+  await expect(page.locator('.main-menu-trigger')).toBeHidden();
+  await page.screenshot({ path: testInfo.outputPath('clean-board.png') });
+  await page.getByRole('button', { name: 'Pen: code', exact: true }).click();
+  await expect(page.locator('.shapes-section')).toBeVisible();
+  await page.getByRole('button', { name: 'Close drawing tools' }).click();
+  await expect(page.locator('.shapes-section')).toBeHidden();
+  await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+  await expect(page.getByRole('complementary')).toBeVisible();
+  const withPanel = await canvas.boundingBox();
+  expect(withPanel.height).toBe(before.height);
+  expect(withPanel.width).toBeLessThan(before.width - 300);
   const divider = page.getByRole('separator', { name: 'Resize code and results panel' });
   const handle = await divider.boundingBox();
-  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + 100);
   await page.mouse.down();
-  await page.mouse.move(handle.x + handle.width / 2, handle.y - 120, { steps: 10 });
+  await page.mouse.move(handle.x - 220, handle.y + 100, { steps: 10 });
   await page.mouse.up();
-  await expect.poll(async () => (await canvas.boundingBox()).height).toBeLessThan(before.height - 90);
+  await expect.poll(async () => (await canvas.boundingBox()).width).toBeLessThan(withPanel.width - 180);
   await divider.focus();
   await page.keyboard.press('Home');
-  await expect(divider).toHaveAttribute('aria-valuenow', '160');
+  await expect(divider).toHaveAttribute('aria-valuenow', '320');
   await page.getByRole('button', { name: 'Hide panel', exact: true }).click();
   await expect(page.getByRole('complementary')).toBeHidden();
-  await expect.poll(async () => (await canvas.boundingBox()).height).toBeGreaterThan(before.height + 100);
-  await page.screenshot({ path: testInfo.outputPath('focused-board.png') });
+  await expect.poll(async () => (await canvas.boundingBox()).width).toBe(1440);
   await page.getByRole('button', { name: 'Show panel', exact: true }).click();
   await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(lessons[0].source);
   expect(errors).toEqual([]);
@@ -36,6 +50,7 @@ test('fills the viewport, resizes the dock with mouse and keyboard, and focuses 
 
 test('initial code bounds contain every rendered glyph after the local font loads', async ({ page }, testInfo) => {
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download', exact: true }).click();
   const download = await downloadPromise;
@@ -53,8 +68,10 @@ test('initial code bounds contain every rendered glyph after the local font load
 
 test('resizes writing frames and keeps a long program input contained', async ({ page }, testInfo) => {
   await page.goto('/');
-  // Resizing needs the canvas API, which is ready once Verify & run is enabled.
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
+  await openPanel(page);
+  await page.locator('.frame-size summary').click();
   await page.getByLabel('Frame width', { exact: true }).fill('1200');
   await page.getByLabel('Frame height', { exact: true }).fill('900');
   await page.getByRole('button', { name: 'Apply size', exact: true }).click();
@@ -89,15 +106,19 @@ test('resizes writing frames and keeps a long program input contained', async ({
 
 test('enters and exits browser fullscreen without losing the board', async ({ page }) => {
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await page.getByRole('button', { name: 'Enter fullscreen', exact: true }).click();
   await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
   await page.getByRole('button', { name: 'Exit fullscreen', exact: true }).click();
   await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(false);
+  await openPanel(page);
   await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(lessons[0].source);
 });
 
 test('browses curated headers and loads their examples onto the board', async ({ page }) => {
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
+  await openPanel(page);
   await page.getByRole('tab', { name: 'Libraries', exact: true }).click();
   for (const library of libraries) {
     await page.getByLabel('CURATED C LIBRARIES').selectOption(library.file);

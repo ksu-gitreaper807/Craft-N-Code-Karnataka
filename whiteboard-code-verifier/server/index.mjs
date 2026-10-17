@@ -2,10 +2,12 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, extname, resolve, sep } from 'node:path';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { sandboxHealth, runSandbox } from './sandbox.mjs';
 import { loadOcrEnvironment, ocrConfiguration, recognizeHandwriting, OCR_BODY_LIMIT } from './ocr.mjs';
 import { libraries } from '../src/libraries.js';
 import { createSnapshotStore, SNAPSHOT_BODY_LIMIT } from './snapshots.mjs';
+import { assistPseudocode, PSEUDOCODE_BODY_LIMIT } from './pseudocode.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = resolve(ROOT, 'dist');
@@ -42,7 +44,11 @@ export function validatePayload(body) {
 }
 
 export function createHandler({ run = runSandbox, health = sandboxHealth, now = Date.now,
-  recognize = recognizeHandwriting, ocrHealth = ocrConfiguration, snapshots = createSnapshotStore() } = {}) {
+  recognize = recognizeHandwriting, assist = assistPseudocode, ocrHealth = ocrConfiguration, snapshots = createSnapshotStore(),
+  appOrigin = process.env.BOARDROOM_APP_ORIGIN, apiHost = process.env.BOARDROOM_API_HOST,
+  apiToken = process.env.BOARDROOM_API_TOKEN } = {}) {
+  if ((appOrigin || apiHost) && !apiToken) throw new Error('BOARDROOM_API_TOKEN is required when exposing the API to a hosted frontend.');
+  const expectedToken = apiToken ? createHash('sha256').update(apiToken).digest() : null;
   let active = 0;
   let activeOcr = 0;
   let rate = { start: 0, count: 0 };
@@ -51,24 +57,49 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     const port = req.socket.localPort;
-    const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`];
+    const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`, ...(apiHost ? [apiHost] : [])];
     if (!allowedHosts.includes(req.headers.host)) return send(res, 403, { error: 'Use the local server address.' });
-    if (req.headers.origin && ![
+    const allowedOrigins = [
       ...allowedHosts.map((host) => `http://${host}`),
       'http://127.0.0.1:5173', 'http://localhost:5173',
-    ].includes(req.headers.origin)) return send(res, 403, { error: 'This origin cannot access the local runner.' });
+      ...(appOrigin ? [appOrigin.replace(/\/$/, '')] : []),
+    ];
+    if (req.headers.origin && !allowedOrigins.includes(req.headers.origin)) return send(res, 403, { error: 'This origin cannot access the local runner.' });
+    if (req.headers.origin) {
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    }
 
     let pathname;
     try { pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname); }
     catch { return send(res, 400, { error: 'Invalid URL.' }); }
+    if (pathname.startsWith('/api/') && req.method === 'OPTIONS') {
+      res.writeHead(204);
+      return res.end();
+    }
+    if (pathname.startsWith('/api/') && expectedToken) {
+      const presented = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1] ?? '';
+      const digest = createHash('sha256').update(presented).digest();
+      if (!timingSafeEqual(digest, expectedToken)) return send(res, 401, { error: 'A valid Boardroom API token is required.' });
+    }
     try {
       if (pathname === '/api/health' && req.method === 'GET') {
         return send(res, 200, { service: 'whiteboard-code-verifier', runner: await health(), ocr: ocrHealth() });
+      }
+      if (pathname === '/api/snapshots/sync' && req.method === 'GET') return send(res, 200, await snapshots.syncStatus());
+      if (pathname === '/api/snapshots/sync' && req.method === 'POST') {
+        snapshots.retrySync().catch(() => {});
+        return send(res, 202, await snapshots.syncStatus());
       }
       if (pathname === '/api/snapshots' && req.method === 'GET') return send(res, 200, { snapshots: await snapshots.list() });
       if (pathname === '/api/snapshots' && req.method === 'POST') {
         if (!req.headers['content-type']?.startsWith('application/json')) return send(res, 415, { error: 'Use application/json.' });
         return send(res, 201, await snapshots.save(await requestBody(req, SNAPSHOT_BODY_LIMIT)));
+      }
+      if (pathname.startsWith('/api/snapshots/') && pathname.endsWith('/libraries') && req.method === 'GET') {
+        return send(res, 200, await snapshots.libraries(pathname.slice('/api/snapshots/'.length, -'/libraries'.length)));
       }
       if (pathname.startsWith('/api/snapshots/') && req.method === 'GET') {
         return send(res, 200, { scene: await snapshots.read(pathname.slice('/api/snapshots/'.length)) });
@@ -78,14 +109,17 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         return res.end(header);
       }
-      if (pathname === '/api/ocr' && req.method === 'POST') {
+      if (['/api/ocr', '/api/pseudocode'].includes(pathname) && req.method === 'POST') {
         if (!req.headers['content-type']?.startsWith('application/json')) return send(res, 415, { error: 'Use application/json.' });
-        if (activeOcr >= 1) return send(res, 429, { error: 'A handwriting request is already running. Try again shortly.' });
+        if (activeOcr >= 1) return send(res, 429, { error: 'A Gemini request is already running. Try again shortly.' });
         if (now() - ocrRate.start >= 60_000) ocrRate = { start: now(), count: 0 };
-        if (ocrRate.count >= 6) return send(res, 429, { error: 'Handwriting request limit reached. Try again in a minute.' });
+        if (ocrRate.count >= 6) return send(res, 429, { error: 'Gemini request limit reached. Try again in a minute.' });
         activeOcr += 1;
         ocrRate.count += 1;
-        try { return send(res, 200, await recognize(await requestBody(req, OCR_BODY_LIMIT))); }
+        try {
+          const pseudocode = pathname === '/api/pseudocode';
+          return send(res, 200, await (pseudocode ? assist : recognize)(await requestBody(req, pseudocode ? PSEUDOCODE_BODY_LIMIT : OCR_BODY_LIMIT)));
+        }
         finally { activeOcr -= 1; }
       }
       if (pathname === '/api/run' && req.method === 'POST') {
@@ -123,7 +157,7 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
       send(res, error.status ?? (error.code === 'ENOENT' ? 404 : 502), {
         error: error.code === 'ENOENT' ? 'Frontend not built. Run npm run build or use npm run dev.' : error.message,
         ...(error.code?.startsWith('ocr_') || error.code === 'invalid_ocr_response' || error.code === 'invalid_ocr_request' ? { code: error.code } : {}),
-        ...(error.ocrDiagnostic ? { diagnostic: error.ocrDiagnostic } : {}),
+        ...(error.ocrDiagnostic || error.diagnostic ? { diagnostic: error.ocrDiagnostic ?? error.diagnostic } : {}),
       });
     }
   };
@@ -136,9 +170,14 @@ export function createApp(options) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   loadOcrEnvironment();
   const port = Number(process.env.PORT ?? 8787);
-  const server = createApp();
+  const snapshots = createSnapshotStore();
+  const server = createApp({ snapshots });
   server.requestTimeout = 10_000;
   server.headersTimeout = 10_000;
-  server.listen(port, '127.0.0.1', () => console.log(`Boardroom API: http://127.0.0.1:${port}`));
+  server.listen(port, '127.0.0.1', () => {
+    console.log(`Boardroom API: http://127.0.0.1:${port}`);
+    snapshots.startSync();
+  });
+  server.on('close', () => snapshots.stopSync());
   server.on('error', (error) => { console.error(error.message); process.exitCode = 1; });
 }

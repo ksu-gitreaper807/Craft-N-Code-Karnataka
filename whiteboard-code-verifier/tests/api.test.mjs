@@ -17,14 +17,15 @@ async function start(t, dependencies = {}) {
     for (const [name, value] of Object.entries(options.headers ?? {})) req.headers[name.toLowerCase()] = value;
     let status = 200;
     let body = '';
+    const headers = {};
     const res = {
       headersSent: false,
-      setHeader() {},
+      setHeader(name, value) { headers[name.toLowerCase()] = value; },
       writeHead(code) { status = code; this.headersSent = true; },
       end(value) { body = value?.toString() ?? ''; },
     };
     await handler(req, res);
-    return { status, json: async () => JSON.parse(body), text: async () => body };
+    return { status, headers, json: async () => JSON.parse(body), text: async () => body };
   };
 }
 
@@ -34,6 +35,22 @@ function post(base, payload, options = {}) {
     body: typeof payload === 'string' ? payload : JSON.stringify(payload),
   });
 }
+
+test('pseudocode API preserves payload, authenticates, bounds uploads and never executes a program', async (t) => {
+  let received;
+  const base = await start(t, { apiToken: 'test-private-token',
+    run: async () => { throw new Error('Must not run during Gemini preparation'); },
+    assist: async (body) => { received = body; return { source: 'int main(void) {}', level: body.level }; } });
+  const body = JSON.stringify({ source: 'print 5', stdin: '1\n', level: 3 });
+  const invoke = (extra = {}) => base('/api/pseudocode', { method: 'POST', body,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-private-token' }, ...extra });
+  assert.equal((await invoke({ headers: { 'Content-Type': 'application/json' } })).status, 401);
+  const response = await invoke();
+  assert.equal(response.status, 200);
+  assert.deepEqual(received, JSON.parse(body));
+  assert.equal((await invoke({ body: 'x'.repeat(65_537) })).status, 413);
+  assert.equal((await invoke({ headers: { Authorization: 'Bearer test-private-token', Origin: 'https://foreign.example' } })).status, 403);
+});
 
 test('rejects invalid and oversized code/input before entering the runner', () => {
   assert.ok(validatePayload(null));
@@ -78,6 +95,26 @@ test('rejects malformed JSON, wrong content type, oversized bodies, and foreign 
   assert.equal((await post(base, { source: 'x'.repeat(66_000) })).status, 413);
   assert.equal((await post(base, { source: 'x' }, { headers: { Origin: 'https://unrelated.example' } })).status, 403);
   assert.equal((await base('/api/health', { headers: { Host: 'unrelated.example' } })).status, 403);
+});
+
+test('hosted API accepts only its frontend origin and a runtime access token', async (t) => {
+  const base = await start(t, { appOrigin: 'https://board-of-c.vercel.app', apiHost: 'api.example.com',
+    apiToken: 'private-test-token', health: async () => ({ available: true }),
+    ocrHealth: () => ({ available: true }) });
+  const hosted = { Host: 'api.example.com', Origin: 'https://board-of-c.vercel.app' };
+  const preflight = await base('/api/health', { method: 'OPTIONS', headers: { ...hosted,
+    'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'Authorization' } });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers['access-control-allow-origin'], hosted.Origin);
+  assert.match(preflight.headers['access-control-allow-headers'], /Authorization/);
+  assert.equal((await base('/api/health', { headers: hosted })).status, 401);
+  assert.equal((await base('/api/health', { headers: { ...hosted, Authorization: 'Bearer wrong' } })).status, 401);
+  const authorized = await base('/api/health', { headers: { ...hosted, Authorization: 'Bearer private-test-token' } });
+  assert.equal(authorized.status, 200);
+  assert.equal(authorized.headers['access-control-allow-origin'], hosted.Origin);
+  assert.equal((await base('/api/health', { headers: { ...hosted, Origin: 'https://untrusted.example', Authorization: 'Bearer private-test-token' } })).status, 403);
+  assert.equal((await base('/api/health', { headers: { ...hosted, Host: 'untrusted.example', Authorization: 'Bearer private-test-token' } })).status, 403);
+  assert.throws(() => createHandler({ appOrigin: hosted.Origin, apiToken: '' }), /BOARDROOM_API_TOKEN/);
 });
 
 test('caps concurrent runs, then releases slots after a failed runner', async (t) => {
@@ -169,16 +206,25 @@ test('returns safe Gemini quota diagnostics to the browser', async (t) => {
 test('snapshot API saves and reads history independently of code execution', async (t) => {
   let runs = 0;
   let saved;
+  let retries = 0;
   const entry = { id: '2026-10-17/12-00-00-lesson-12345678', commit: 'abc123', title: 'Lesson' };
   const base = await start(t, { run: async () => { runs++; }, snapshots: {
     save: async (body) => { saved = body; return entry; }, list: async () => [entry],
     read: async (id) => { assert.equal(id, entry.id); return { type: 'excalidraw' }; },
+    libraries: async (id) => { assert.equal(id, entry.id); return { legacy: false, headers: [{ file: 'queue.h', changed: false }] }; },
+    syncStatus: async () => ({ state: 'pending', remoteConfigured: true, branch: 'boardroom-lessons' }),
+    retrySync: async () => { retries++; },
   } });
   const response = await base('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene: { type: 'excalidraw' } }) });
   assert.equal(response.status, 201);
   assert.equal(saved.scene.type, 'excalidraw');
   assert.deepEqual((await (await base('/api/snapshots')).json()).snapshots, [entry]);
   assert.equal((await (await base(`/api/snapshots/${encodeURIComponent(entry.id)}`)).json()).scene.type, 'excalidraw');
+  assert.equal((await (await base(`/api/snapshots/${encodeURIComponent(entry.id)}/libraries`)).json()).headers[0].file, 'queue.h');
+  assert.equal((await (await base('/api/snapshots/sync')).json()).state, 'pending');
+  assert.equal((await base('/api/snapshots/sync', { method: 'POST' })).status, 202);
+  assert.equal(retries, 1);
+  assert.equal((await base('/api/snapshots/sync', { method: 'POST', headers: { Origin: 'https://foreign.example' } })).status, 403);
   assert.equal((await base('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{}' })).status, 415);
   assert.equal((await base('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://foreign.example' }, body: '{}' })).status, 403);
   assert.equal((await base('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'x'.repeat(4 * 1024 * 1024 + 1) })).status, 413);

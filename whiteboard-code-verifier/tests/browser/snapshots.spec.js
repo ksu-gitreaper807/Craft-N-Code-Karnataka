@@ -1,10 +1,26 @@
+import { selectWritingRegion } from './board-helpers.js';
 import { test, expect } from '@playwright/test';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { boardFile, importBoard } from './helpers.js';
+import { boardFile, importBoard, openPanel } from './helpers.js';
 
 const archive = fileURLToPath(new URL('../../test-results/lesson-snapshots/', import.meta.url));
+
+test('compares a committed teaching header with the current version without opening the board', async ({ page }) => {
+  await page.goto('/');
+  await importBoard(page, boardFile({ code: '#include <queue.h>\nint main(void) { Queue q; queue_init(&q); queue_free(&q); return 0; }' }));
+  const savedResponse = page.waitForResponse((response) => response.url().endsWith('/api/snapshots') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Save lesson snapshot' }).click();
+  const saved = await (await savedResponse).json();
+  const entry = page.locator('.snapshot-history li').filter({ hasText: saved.id });
+  await entry.getByRole('button', { name: 'Compare saved libraries' }).click();
+  await expect(page.getByLabel('Saved library comparison')).toContainText('queue.h');
+  await page.locator('#saved-library-select').selectOption('queue.h');
+  await expect(page.getByLabel('Saved library comparison')).toContainText('matches the saved lesson');
+  await expect(page.locator('.library-comparison pre')).toHaveCount(2);
+  expect(await page.locator('.library-comparison pre').first().textContent()).toBe(await page.locator('.library-comparison pre').last().textContent());
+});
 
 test('saves literal lesson files with real Git history and reopens the saved board without running code', async ({ page }) => {
   let runs = 0;
@@ -13,7 +29,7 @@ test('saves literal lesson files with real Git history and reopens the saved boa
   const source = '#include <stdio.h>\n\nint main(void) {\n    unknown_symbol;\n}\n';
   // The editor holds the code that runs; the board text is what a snapshot saves.
   await importBoard(page, boardFile({ code: source }));
-  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(source);
+  await openPanel(page);
   await page.getByLabel('STANDARD INPUT · BLUE INK').fill('3 5\n\n');
   const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/snapshots') && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Save lesson snapshot', exact: true }).click();
@@ -22,13 +38,14 @@ test('saves literal lesson files with real Git history and reopens the saved boa
   const saved = await response.json();
   expect(saved.commit).toMatch(/^[a-f0-9]{40,64}$/);
   expect(saved.id).toMatch(/^\d{4}-\d{2}-\d{2}\//);
-  expect((await readdir(join(archive, saved.id))).sort()).toEqual(['board.c', 'board.excalidraw', 'input.txt']);
+  expect((await readdir(join(archive, saved.id))).sort()).toEqual(['.dockerignore', 'Dockerfile', 'board.c', 'board.excalidraw', 'build.sh', 'input.txt', 'lib.lock', 'replay.py', 'runner.py']);
   expect(await readFile(join(archive, saved.id, 'board.c'), 'utf8')).toBe(source);
   expect(await readFile(join(archive, saved.id, 'input.txt'), 'utf8')).toBe('3 5\n\n');
   const scene = JSON.parse(await readFile(join(archive, saved.id, 'board.excalidraw'), 'utf8'));
   expect(scene.elements.some((element) => element.text === source)).toBe(true);
   await expect(page.getByRole('tab', { name: 'History', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('.snapshot-history')).toContainText(saved.commit.slice(0, 8));
+  await expect(page.locator('.snapshot-history [role=status]')).toContainText('saved on this machine');
   // Saving again while already viewing history refreshes it and never overwrites.
   const nextResponse = page.waitForResponse((item) => item.url().endsWith('/api/snapshots') && item.request().method() === 'POST');
   await page.getByRole('button', { name: 'Save lesson snapshot', exact: true }).click();
@@ -36,6 +53,7 @@ test('saves literal lesson files with real Git history and reopens the saved boa
   expect(next.id).not.toBe(saved.id);
   await expect(page.locator('.snapshot-history')).toContainText(next.commit.slice(0, 8));
   await page.getByLabel('Demo lesson').selectOption('queue');
+  await openPanel(page);
   await page.getByRole('tab', { name: 'History', exact: true }).click();
   const entry = page.locator('.snapshot-history li').filter({ hasText: saved.id });
   await entry.getByRole('button', { name: 'Open saved board' }).click();
@@ -58,7 +76,9 @@ test('blocks unconfirmed or changed ink and saves teacher-corrected C without re
     })),
   } }));
   await page.goto('/');
-  await page.getByRole('button', { name: '+ New handwritten board' }).click();
+  await page.getByLabel('Demo lesson').selectOption('sum');
+  await page.getByRole('button', { name: '+ Blank canvas' }).click();
+  await selectWritingRegion(page);
   const area = await page.locator('.canvas-container').boundingBox();
   async function draw(offset = 0) {
     const x = area.x + area.width * .4 + offset, y = area.y + area.height * .45 + offset;
@@ -84,6 +104,7 @@ test('blocks unconfirmed or changed ink and saves teacher-corrected C without re
   await page.getByRole('button', { name: 'Pen: code', exact: true }).click();
   await draw(50);
   await expect(page.getByRole('button', { name: 'Save lesson snapshot', exact: true })).toBeDisabled();
+  await openPanel(page);
   await page.getByRole('tab', { name: 'History', exact: true }).click();
   await page.locator('.snapshot-history li').filter({ hasText: saved.id }).getByRole('button', { name: 'Open saved board' }).click();
   await expect(page.getByRole('tab', { name: 'Handwriting', exact: true })).toHaveAttribute('aria-selected', 'true');
