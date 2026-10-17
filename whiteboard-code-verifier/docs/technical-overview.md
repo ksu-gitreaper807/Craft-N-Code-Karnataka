@@ -53,6 +53,8 @@ The browser owns the working scene and its review state. The Node process owns c
 
 One Excalidraw frame represents one program. The teacher selects which frame to verify.
 
+The workspace fills the browser viewport beneath compact controls. Browser fullscreen and a hideable side panel provide more drawing space. The panel divider supports pointer dragging and keyboard resizing. Writing frames have explicit width/height controls, a **More room** action, and **Fit frame** navigation. Editing typed source in the side panel grows the frame to contain the program and positions typed stdin below it. Shrinking cannot clip existing frame contents. The source textarea also supports vertical resizing.
+
 - Black/default code ink (`#1e1e1e` or `#000000`) supplies C source.
 - Blue ink (`#1971c2`) supplies standard input.
 - Other colors serve as annotations and are excluded from extraction and OCR captures.
@@ -114,11 +116,11 @@ The runner parses GCC messages, sanitizer output, and curated-library contract f
 
 Typed source lines map directly to element geometry. OCR line boxes project through the capture's bounds back onto canvas coordinates. Clicking a diagnostic focuses its region. Editing source, input, or relevant geometry marks old results stale and removes their highlights. Added review lines can lack an original board location.
 
-The bundled header-only `runner/lib/stack.h` implements a dynamically growing integer stack. Its operations expose allocation growth and reject an empty pop. Macros pass `__LINE__` to the implementation so a contract failure identifies the teacher's callsite. Teachers can inspect the same header used by the compiler from the UI.
+The bundled header-only libraries provide an integer stack (`stack.h`), a singly linked integer list (`linked_list.h`), a growing circular integer queue (`queue.h`), and binary search with lower/upper bounds on sorted arrays (`search.h`). These are project-provided teaching extensions rather than ISO C standard-library headers. Public operation macros pass `__LINE__` so contract failures identify the teacher's callsite. The **Libraries** tab exposes the compiled header sources, method lists, and runnable examples. See the [C library reference](c-libraries.md) for APIs, ownership rules, preconditions, and complexity.
 
 Teaching notes are deterministic pattern matches for operations such as `malloc`, `free`, `scanf`, and stack operations. The current implementation does not use an AST parser or an LLM to generate these notes. The memory demonstration visualizes actual addresses printed by its program; it does not inspect arbitrary process memory or determine glibc heap/mmap regions.
 
-Three starter lessons demonstrate input/output, a use-after-free error, and an empty-stack contract failure.
+Six starter lessons demonstrate input/output, a use-after-free error, an empty-stack contract failure, linked-list traversal/insertion, FIFO queue operations, and binary search with duplicate bounds. Rule-based teaching notes also explain list ownership, queue growth, and the sorted-array search precondition.
 
 ## 8. API and configuration
 
@@ -127,7 +129,7 @@ Three starter lessons demonstrate input/output, a use-after-free error, and an e
 | `GET /api/health` | Report Docker runner readiness and OCR configuration availability |
 | `POST /api/ocr` | Recognize supplied code/input PNG data URLs; return an unconfirmed transcription |
 | `POST /api/run` | Compile and execute `{ "source": "...", "stdin": "..." }` |
-| `GET /api/library/stack.h` | Serve the trusted stack header shown in the UI |
+| `GET /api/library/<name>` | Serve an allowlisted public teaching header: `stack.h`, `linked_list.h`, `queue.h`, or `search.h` |
 
 OCR permits one request in flight and six attempts per minute, with a 4 MiB request-body limit and a 60-second provider deadline. Execution permits two requests in flight and 20 attempts per minute. These limits are process-local and reset when the server restarts.
 
@@ -169,6 +171,6 @@ Development serves the frontend at `http://127.0.0.1:5173` and the API at `http:
 | `npm run test:browser` | Production frontend, review workflow, import/export, responsive layout, and real Docker runs |
 | `npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png` | Opt-in live Gemini request; prints unconfirmed text without executing it |
 
-The most recent implementation verification passed 36 Node/Python tests and 11 browser tests. The browser suite stubs OCR responses explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
+The most recent implementation verification passed 40 Node/Python tests, 14 Docker checks, and 19 browser tests. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public header browsing, and all six examples. The browser suite stubs OCR responses explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
 
 These results establish the working integration. Human handwriting accuracy, critical-symbol error rates, and correction time still require a benchmark on genuine classroom samples. Other material limits are full-C-program input only, restricted includes, approximate handwriting highlights, no automatic code repair, no collaboration or authentication, and local-only deployment. Caveman gateway observability is not connected in the current implementation.

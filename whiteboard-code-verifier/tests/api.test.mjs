@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { createHandler, validatePayload } from '../server/index.mjs';
+import { libraries } from '../src/libraries.js';
+import { readFile } from 'node:fs/promises';
 
 async function start(t, dependencies = {}) {
   const handler = createHandler(dependencies);
@@ -130,6 +132,18 @@ test('OCR endpoint is separate from execution and releases its slot after provid
   assert.equal((await first.json()).code, 'ocr_not_configured');
   assert.equal((await base('/api/ocr', options)).status, 200);
   assert.equal(runs, 0);
+});
+
+test('serves every curated header exactly and rejects unknown or internal library paths', async (t) => {
+  const base = await start(t);
+  for (const library of libraries) {
+    const response = await base(`/api/library/${library.file}`);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), await readFile(new URL(`../runner/lib/${library.file}`, import.meta.url), 'utf8'));
+  }
+  for (const file of ['board_contract.h', 'unknown.h', '../server/index.mjs']) {
+    assert.equal((await base(`/api/library/${file}`)).status, 404);
+  }
 });
 
 test('OCR payload cap is independent of source cap and foreign origins are rejected', async (t) => {

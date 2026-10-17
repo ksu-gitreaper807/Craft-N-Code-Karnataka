@@ -3,10 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { Excalidraw, restoreElements } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { CODE_COLOR, INPUT_COLOR, extractProgram, framesIn, isOverlay, programSignature } from './board.js';
-import { addHandwritingFrame, clearOverlays, focusSourceLine, lessonScene, replaceChannel, showDiagnostics } from './canvas.js';
+import { addHandwritingFrame, clearOverlays, fitProgramFrame, focusSourceLine, lessonScene, replaceChannel, resizeProgramFrame, showDiagnostics } from './canvas.js';
 import { handwritingChannels, inkFingerprint } from './handwriting.js';
 import HandwritingPanel from './HandwritingPanel.jsx';
 import { lessons } from './lessons.js';
+import { libraries } from './libraries.js';
+import FrameControls from './FrameControls.jsx';
+import WorkspaceLayout from './WorkspaceLayout.jsx';
 import './styles.css';
 
 const labels = {
@@ -56,7 +59,10 @@ function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [library, setLibrary] = useState('');
+  const [librarySources, setLibrarySources] = useState({});
+  const [libraryFile, setLibraryFile] = useState('stack.h');
+  const [panelVisible, setPanelVisible] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
   const upload = useRef(null);
   const ocrPanel = useRef(null);
   const currentSignature = useRef('');
@@ -72,6 +78,9 @@ function App() {
   currentSignature.current = signature;
   const stale = result && result.signature !== signature;
   const lesson = lessons.find((item) => item.id === lessonId);
+  const selectedFrame = frames.find((frame) => frame.id === frameId);
+  const library = libraries.find((item) => item.file === libraryFile);
+  const refreshCanvas = useCallback(() => api?.refresh(), [api]);
 
   const checkHealth = useCallback(async () => {
     try {
@@ -87,6 +96,11 @@ function App() {
   }, []);
   useEffect(() => { checkHealth(); }, [checkHealth]);
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    const changed = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', changed);
+    return () => document.removeEventListener('fullscreenchange', changed);
+  }, []);
   useEffect(() => {
     if (api && stale && api.getSceneElements().some(isOverlay)) clearOverlays(api);
   }, [api, stale, signature]);
@@ -115,6 +129,7 @@ function App() {
     if (!api || running || reading) return;
     setError('');
     setNotice('');
+    setPanelVisible(true);
     const liveElements = api.getSceneElements();
     const liveChannels = handwritingChannels(liveElements, frameId);
     const liveHasInk = liveChannels.code || liveChannels.stdin;
@@ -189,14 +204,23 @@ function App() {
     } catch (caught) { setError(`Could not import: ${caught.message}`); }
   }
 
-  async function viewLibrary() {
+  async function viewLibrary(file = libraryFile) {
     setTab('library');
-    if (library) return;
+    setLibraryFile(file);
+    if (librarySources[file]) return;
     try {
-      const response = await fetch('/api/library/stack.h');
-      if (!response.ok) throw new Error('Could not load stack.h. Check the API.');
-      setLibrary(await response.text());
+      const response = await fetch(`/api/library/${file}`);
+      if (!response.ok) throw new Error(`Could not load ${file}. Check the API.`);
+      const source = await response.text();
+      setLibrarySources((previous) => ({ ...previous, [file]: source }));
     } catch (caught) { setError(caught.message); }
+  }
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch { setError('Fullscreen is unavailable in this browser. The workspace still fills the browser window.'); }
   }
 
   function focusDiagnostic(diagnostic) {
@@ -226,6 +250,8 @@ function App() {
         <a className="brand" href="/" aria-label="Boardroom home"><span className="brand-mark"><Icon name="board" size={23} /></span><span>boardroom<span className="brand-dot">.</span></span></a>
         <div className="project-name"><span className="small-divider" />Whiteboard Code Verifier<span className="tag">EARLY BUILD</span></div>
         <div className="header-actions">
+          <button className="quiet-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={toggleFullscreen}>⛶ <span>{fullscreen ? 'Exit fullscreen' : 'Fullscreen'}</span></button>
+          <button className="quiet-button" aria-pressed={!panelVisible} onClick={() => setPanelVisible((visible) => !visible)}>{panelVisible ? 'Hide panel' : 'Show panel'}</button>
           <button className="quiet-button" onClick={() => upload.current.click()} disabled={!api || running || reading}><Icon name="upload" /> <span>Open board</span></button>
           <button className="quiet-button" onClick={download} disabled={!api}><Icon name="download" /><span>Download</span></button>
           <input ref={upload} type="file" accept=".excalidraw,.json" hidden onChange={importBoard} />
@@ -233,23 +259,21 @@ function App() {
       </header>
 
       <main>
-        <section className="intro">
-          <div><div className="eyebrow"><span className="tiny-square" /> A WORKSPACE FOR TEACHING C</div><h1>Good lessons deserve a test run.</h1><p>Write it on the board. Run it for real. Make the invisible visible.</p></div>
-          <div className="intro-note"><span className="hand-arrow">↘</span><span>Keep the idea on the board.<br />Bring the evidence beside it.</span></div>
-        </section>
-
         <div className="workspace-bar">
           <div className="board-title"><Icon name="board" /><span>Lesson board</span><span className="tag subtle">C11</span></div>
           <label className="lesson-select"><span>Start with a lesson</span><select aria-label="Demo lesson" value={lessonId} disabled={running || reading || !api} onChange={(event) => chooseLesson(event.target.value)}>{!lessonId && <option value="">Custom board</option>}{lessons.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
         </div>
 
-        <div className="workspace">
+        <WorkspaceLayout focused={!panelVisible} onResize={refreshCanvas}>
           <section className="board-pane" aria-label="Interactive lesson whiteboard">
             <div className="handwriting-tools">
               <button onClick={newHandwrittenBoard} disabled={!api || reading || running}>+ New handwritten board</button>
               <button onClick={() => selectPen(CODE_COLOR)} disabled={!api || reading || running}><i className="ink code-ink" />Pen: code</button>
               <button onClick={() => selectPen(INPUT_COLOR)} disabled={!api || reading || running}><i className="ink input-ink" />Pen: input</button>
             </div>
+            <FrameControls frame={selectedFrame} disabled={running || reading}
+              onResize={(width, height) => resizeProgramFrame(api, frameId, width, height)}
+              onFit={() => fitProgramFrame(api, frameId)} />
             <div className="canvas-container"><Excalidraw
               initialData={{ elements: initial, appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 3, currentItemStrokeColor: CODE_COLOR }, scrollToContent: true }}
               excalidrawAPI={setApi} onChange={onChange} theme="light" name="Boardroom lesson"
@@ -258,7 +282,7 @@ function App() {
             <div className="canvas-footer"><span><i className="ink code-ink" />Black = code</span><span><i className="ink input-ink" />Blue = stdin</span><span className="annotation-key">Other colors = your annotations</span><button onClick={() => api && clearOverlays(api)} disabled={!api}>Clear highlights</button></div>
           </section>
 
-          <aside className="inspector" aria-label="Verification controls and results">
+          <aside className="inspector" aria-label="Verification controls and results" hidden={!panelVisible}>
             <div className="run-heading"><div><span className="eyebrow">THE REALITY CHECK</span><h2>Run this lesson</h2></div><span className={`connection ${health?.available ? 'online' : ''}`} title={health?.message ?? 'Checking runner'}><i />{health ? (health.available ? 'Runner ready' : 'Runner offline') : 'Connecting'}</span></div>
             <label className="field-label" htmlFor="program-frame">PROGRAM FRAME</label>
             <select id="program-frame" className="frame-select" value={frameId} disabled={running || reading} onChange={(event) => setFrameId(event.target.value)}>{!frames.length && <option value="">Create a frame on the board</option>}{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.name || 'Untitled program'}</option>)}</select>
@@ -268,7 +292,7 @@ function App() {
             {health && !health.available && <div className="runner-notice"><span>{health.message}</span><button onClick={checkHealth}>Check again</button></div>}
             {error && <div className="error-notice" role="alert">{error}</div>}
             {notice && <p className="notice" role="status">{notice}</p>}
-            <div className="result-tabs" role="tablist" aria-label="Run details">{[['output', 'Output'], ['handwriting', 'Handwriting'], ['source', 'Source & input'], ['library', 'stack.h']].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => id === 'library' ? viewLibrary() : setTab(id)}>{label}</button>)}</div>
+            <div className="result-tabs" role="tablist" aria-label="Run details">{[['output', 'Output'], ['handwriting', 'Handwriting'], ['source', 'Source & input'], ['library', 'Libraries']].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => id === 'library' ? viewLibrary() : setTab(id)}>{label}</button>)}</div>
 
             <div className="result-body" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
               <div hidden={tab !== 'handwriting'}><HandwritingPanel ref={ocrPanel}
@@ -293,14 +317,26 @@ function App() {
                 </div>}
               </>}
               {tab === 'source' && <div className="source-panel"><p className="panel-help">{hasInk ? 'Review changes in the Handwriting tab. The original strokes stay on the board.' : 'Edit here or use the canvas text tool. Changes here replace the selected frame’s black or blue text.'}</p><label className="field-label" htmlFor="source-editor">CONFIRMED SOURCE · {program.lineMap.length} LINES</label><textarea id="source-editor" className="code-editor" value={program.source} spellCheck={false} readOnly={hasInk} disabled={running || reading || !frameId} onChange={(event) => !hasInk && replaceChannel(api, frameId, program.codeIds, event.target.value, CODE_COLOR)} /><label className="field-label" htmlFor="stdin-editor">STANDARD INPUT · BLUE INK</label><textarea id="stdin-editor" className="input-editor" value={program.stdin} spellCheck={false} readOnly={hasInk} placeholder="No input: the program receives EOF." disabled={running || reading || !frameId} onChange={(event) => !hasInk && replaceChannel(api, frameId, program.inputIds, event.target.value, INPUT_COLOR)} /><span className="panel-help">{hasInk ? 'Compiler diagnostics map to approximate regions of the reviewed handwriting.' : 'Handwritten code uses the pen controls and a review step before execution.'}</span></div>}
-              {tab === 'library' && <div className="library-panel"><h3>Open the abstraction.</h3><p className="panel-help">This is the same trusted header compiled by the runner. Include it with <code>#include &lt;stack.h&gt;</code>.</p><pre className="library-source">{library || 'Loading stack.h…'}</pre></div>}
+              {tab === 'library' && <div className="library-panel">
+                <label className="field-label" htmlFor="library-select">CURATED C LIBRARIES</label>
+                <select id="library-select" className="frame-select" value={libraryFile} onChange={(event) => viewLibrary(event.target.value)}>{libraries.map((item) => <option key={item.file} value={item.file}>{item.title} · {item.file}</option>)}</select>
+                <h3>{library.title}</h3><p className="panel-help">{library.description}</p>
+                <p className="library-methods">{library.methods}</p>
+                <p className="panel-help">Include with <code>#include &lt;{libraryFile}&gt;</code>. These are project-provided teaching headers compiled by the runner.</p>
+                <button className="quiet-button" disabled={running || reading || !api} onClick={() => { chooseLesson(library.lessonId); setTab('source'); }}>Load example on board</button>
+                <pre className="library-source">{librarySources[libraryFile] || `Loading ${libraryFile}…`}</pre>
+              </div>}
             </div>
           </aside>
-        </div>
-        <footer className="page-footer"><span><Icon name="check" size={14} />Real compiler. Evidence you can inspect.</span><span>One frame, one program. Your board stays in this browser until you download it.</span></footer>
+        </WorkspaceLayout>
       </main>
     </div>
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+async function mount() {
+  // Measure program text with its actual font; fallback metrics clip long lines.
+  await document.fonts.load('18px Cascadia').catch(() => {});
+  createRoot(document.getElementById('root')).render(<App />);
+}
+mount();

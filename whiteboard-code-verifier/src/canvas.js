@@ -1,4 +1,4 @@
-import { convertToExcalidrawElements } from '@excalidraw/excalidraw';
+import { convertToExcalidrawElements, getCommonBounds } from '@excalidraw/excalidraw';
 import { CODE_COLOR, INPUT_COLOR, diagnosticBoxes, isOverlay } from './board.js';
 
 export function lessonScene(lesson) {
@@ -14,9 +14,10 @@ export function lessonScene(lesson) {
     { type: 'frame', id: 'lesson-frame', name: lesson.title,
       children: texts.map((el) => el.id), x: 48, y: 64, width: 710, height: 530 },
   ], { regenerateIds: false });
-  return elements.map((el) => el.type === 'text' ? { ...el, frameId: 'lesson-frame' } : {
+  const positioned = elements.map((el) => el.type === 'text' ? { ...el, frameId: 'lesson-frame' } : {
     ...el, x: 48, y: 64, width: 710, height: 530,
   });
+  return growFrame(positioned, 'lesson-frame', 710, 530);
 }
 
 export function clearOverlays(api) {
@@ -54,7 +55,33 @@ export function replaceChannel(api, frameId, ids, text, color) {
   if (text) retained.splice(retained.findIndex((el) => el.id === frameId), 0, {
     ...replacement, frameId, version: (first?.version ?? 0) + 1,
   });
-  api.updateScene({ elements: retained });
+  // Keep blue input below a growing typed program instead of overlapping it.
+  const code = retained.filter((el) => el.frameId === frameId && el.type === 'text' && [CODE_COLOR, '#000000'].includes(el.strokeColor));
+  const bottom = code.length ? Math.max(...code.map((el) => el.y + el.height)) + 32 : frame.y + 36;
+  const positioned = retained.map((el) => el.frameId === frameId && el.type === 'text' &&
+    el.strokeColor === INPUT_COLOR && el.y < bottom ? { ...el, y: bottom, version: el.version + 1 } : el);
+  api.updateScene({ elements: growFrame(positioned, frameId, frame.width, frame.height) });
+}
+
+function growFrame(elements, frameId, width, height) {
+  const frame = elements.find((el) => el.id === frameId && el.type === 'frame');
+  if (!frame || !Number.isFinite(width) || !Number.isFinite(height)) return elements;
+  const children = elements.filter((el) => !el.isDeleted && el.frameId === frameId && !isOverlay(el));
+  const bounds = children.length ? getCommonBounds(children) : [frame.x, frame.y, frame.x, frame.y];
+  const next = { ...frame, width: Math.max(320, width, bounds[2] - frame.x + 32),
+    height: Math.max(240, height, bounds[3] - frame.y + 32), version: frame.version + 1 };
+  return elements.map((el) => el.id === frameId ? next : el);
+}
+
+export function resizeProgramFrame(api, frameId, width, height) {
+  const elements = growFrame(api.getSceneElements(), frameId, width, height);
+  api.updateScene({ elements });
+  return elements.find((el) => el.id === frameId);
+}
+
+export function fitProgramFrame(api, frameId) {
+  const frame = api.getSceneElements().find((el) => el.id === frameId);
+  if (frame) api.scrollToContent(frame, { fitToContent: true, maxZoom: 1 });
 }
 
 export function addHandwritingFrame(api) {

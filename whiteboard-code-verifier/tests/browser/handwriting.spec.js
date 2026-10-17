@@ -44,7 +44,7 @@ test('captures pen ink, requires edited teacher confirmation, then runs the conf
   });
   await page.goto('/');
   await page.getByRole('button', { name: '+ New handwritten board' }).click();
-  await expect(page.getByLabel('PROGRAM FRAME')).toContainText('Handwritten program');
+  await expect(page.getByLabel('PROGRAM FRAME', { exact: true })).toContainText('Handwritten program');
   await drawStroke(page);
   await expect(page.getByRole('button', { name: 'Read & review handwriting' })).toBeEnabled();
   await page.getByRole('button', { name: 'Read & review handwriting' }).click();

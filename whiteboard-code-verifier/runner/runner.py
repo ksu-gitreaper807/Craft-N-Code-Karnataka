@@ -15,7 +15,7 @@ OUTPUT_LIMIT = 16_384
 ALLOWED_HEADERS = {
     "assert.h", "ctype.h", "errno.h", "float.h", "inttypes.h", "limits.h",
     "math.h", "stdbool.h", "stddef.h", "stdint.h", "stdio.h", "stdlib.h",
-    "string.h", "time.h", "stack.h",
+    "string.h", "time.h", "stack.h", "linked_list.h", "queue.h", "search.h",
 }
 LIB = Path(__file__).resolve().parent / "lib"
 FLAGS = [
@@ -41,7 +41,7 @@ def validate_source(source):
     for match in re.finditer(r"^\s*#\s*(include\w*|import|embed)\b([^\n]*)", normalized, re.M):
         header = re.fullmatch(r"\s*<([a-z0-9_.]+)>\s*", match[2])
         if match[1] != "include" or not header or header[1] not in ALLOWED_HEADERS:
-            return "Use only supported standard headers or <stack.h>; macro and file-path includes are disabled."
+            return "Use supported standard headers or the curated library headers; macro and file-path includes are disabled."
     return None
 
 
@@ -99,11 +99,11 @@ def parse_diagnostics(compiler_output, runtime_output):
             "severity": "warning" if match[3] == "warning" else "error",
             "message": match[4], "kind": "compiler",
         })
-    contract = re.search(r"\[stack\] CONTRACT: (.+), board line (\d+)", runtime_output)
+    contract = re.search(r"\[(stack|linked_list|queue|search)\] CONTRACT: (.+), board line (\d+)", runtime_output)
     if contract:
         diagnostics.append({
-            "line": int(contract[2]), "severity": "error", "kind": "contract",
-            "message": contract[1],
+            "line": int(contract[3]), "severity": "error", "kind": "contract",
+            "message": f"{contract[1]}: {contract[2]}",
         })
     else:
         summary = re.search(r"(?:ERROR: (?:AddressSanitizer|LeakSanitizer):|runtime error:) ([^\n]+)", runtime_output)
@@ -142,6 +142,18 @@ def teaching_notes(source):
         notes.append({"title": "Input is a contract too", "body":
                       "Check scanf's return value before using its outputs. Blue text supplies stdin; "
                       "when it is exhausted, the program receives EOF."})
+    if re.search(r"\blist_(?:push_front|push_back|insert|erase|pop_front)\s*\(", code):
+        notes.append({"title": "Follow the links", "body":
+                      "Each list node owns a value and a link to the next node. Front and tail insertion are O(1); "
+                      "index-based operations traverse the list. list_free releases all remaining nodes."})
+    if re.search(r"\bqueue_(?:push|pop)\s*\(", code):
+        notes.append({"title": "First in, first out", "body":
+                      "The queue wraps around a circular buffer and grows when full. Push is amortized O(1); "
+                      "front and pop are O(1). queue_free releases the buffer."})
+    if re.search(r"\b(?:binary_search|lower_bound|upper_bound)\s*\(", code):
+        notes.append({"title": "Halve the search space", "body":
+                      "These searches require an ascending sorted array. Each step halves the remaining interval. "
+                      "binary_search returns the first match or -1; bounds locate the start and end of equal values."})
     return notes
 
 

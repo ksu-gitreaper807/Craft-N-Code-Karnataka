@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { sandboxHealth, runSandbox } from './sandbox.mjs';
 import { loadOcrEnvironment, ocrConfiguration, recognizeHandwriting, OCR_BODY_LIMIT } from './ocr.mjs';
+import { libraries } from '../src/libraries.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = resolve(ROOT, 'dist');
@@ -63,8 +64,8 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
       if (pathname === '/api/health' && req.method === 'GET') {
         return send(res, 200, { service: 'whiteboard-code-verifier', runner: await health(), ocr: ocrHealth() });
       }
-      if (pathname === '/api/library/stack.h' && req.method === 'GET') {
-        const header = await readFile(resolve(ROOT, 'runner/lib/stack.h'));
+      if (req.method === 'GET' && libraries.some((library) => pathname === `/api/library/${library.file}`)) {
+        const header = await readFile(resolve(ROOT, 'runner/lib', pathname.slice('/api/library/'.length)));
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         return res.end(header);
       }

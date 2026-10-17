@@ -9,13 +9,14 @@ See the [technical stack and project overview](docs/technical-overview.md) for t
 ## First working slice
 
 - React + Excalidraw canvas; one frame represents one C program.
+- A viewport-filling workspace, browser fullscreen, a hideable/resizable side panel, and expandable writing frames.
 - Gemini handwriting recognition with separate code/input images, editable transcription, alternate readings, and mandatory teacher confirmation.
 - Raw text extraction with preserved blank lines and a source-line-to-element map.
 - Blue (`#1971c2`) text supplies stdin; other annotation colors are ignored.
 - Source/input editors, real stdout/stderr, compiler diagnostics, ASan/UBSan reports, and canvas highlights.
-- Three editable demo lessons: input/output, use-after-free, and a stack contract failure.
+- Six editable demo lessons: input/output, use-after-free, a stack contract failure, linked lists, queues, and binary search.
 - A memory diagram using actual stack-pointer and buffer addresses printed by the memory lesson.
-- Trusted header-only `stack.h`, visible in the UI, with teacher callsite attribution.
+- Trusted header-only `stack.h`, `linked_list.h`, `queue.h`, and `search.h`, visible in the UI, with teacher callsite attribution.
 - Rule-based teaching notes and downloadable/importable Excalidraw scenes. Downloads include the current result when it still matches the board.
 
 ## Run locally
@@ -30,6 +31,14 @@ npm run dev
 ```
 
 Open **http://127.0.0.1:5173**. Vite proxies `/api` to the loopback API on port 8787. The launcher copies Excalidraw fonts locally, so the canvas does not need its font CDN during a lesson. The optional interface web fonts fall back to system fonts when offline.
+
+### Writing space and libraries
+
+The workspace fills the browser window. Use **Fullscreen** to hide browser chrome and **Hide panel** to dedicate the workspace to the board. Drag the divider beside the code/results panel to change its width; keyboard users can focus the divider and use arrow keys, Home, or End. On phones the panel sits below the board and scrolls independently.
+
+Set the writing frame's **Width** and **Height**, then click **Apply size**, or use **+ More room** to extend it downward. Existing writing is retained when shrinking. **Fit frame** brings the whole frame into view; use canvas zoom and pan to navigate larger programs. Editing typed code in **Source & input** automatically grows its frame and moves typed stdin below the program. The source textarea also has a vertical resize handle.
+
+Open **Libraries** to browse the compiled headers, see their public methods, and load an example. See the [C library reference](docs/c-libraries.md) for ownership rules, complexity, contracts, and complete examples. These are project-provided teaching headers storing integers, not ISO C standard-library additions. After changing runner headers, rebuild with `npm run runner:build`.
 
 ### Configure handwriting recognition
 
@@ -85,7 +94,7 @@ handwritten strokes → src/capture.js → POST /api/ocr → server/ocr.mjs → 
 
 The Node API uses only built-in modules. Python's standard library owns compilation, deadlines, output capture, and diagnostic parsing inside the runner. Docker applies no network, read-only root, an unprivileged user, no capabilities, a 64-process limit, 512 MiB memory, one CPU, and a 64 MiB temporary filesystem. Compilation has a 10-second deadline; execution has a 5-second wall deadline and 3-second CPU soft limit. Output is bounded. No host directories or credentials are mounted into runs.
 
-`GET /api/health` reports runner readiness; `GET /api/library/stack.h` serves the compiled library source. `POST /api/run` accepts `{ "source": "...", "stdin": "..." }` and returns status, stdout, stderr, compiler output, exit code, duration, diagnostics, and notes. Source is limited to 32 KiB and input to 8 KiB. The local API caps concurrency at two and accepts at most 20 run attempts per minute.
+`GET /api/health` reports runner readiness; `GET /api/library/<name>` serves an allowlisted public teaching header (`stack.h`, `linked_list.h`, `queue.h`, or `search.h`). `POST /api/run` accepts `{ "source": "...", "stdin": "..." }` and returns status, stdout, stderr, compiler output, exit code, duration, diagnostics, and notes. Source is limited to 32 KiB and input to 8 KiB. The local API caps concurrency at two and accepts at most 20 run attempts per minute.
 
 `POST /api/ocr` accepts `{ "code": "data:image/png;base64,...", "stdin": "data:image/png;base64,..." }`; omit a channel when it contains no handwriting. It returns line text, normalized line boxes, ambiguity flags, alternatives, provider/model metadata, and `requiresConfirmation: true`. It never compiles or runs anything. Requests are limited to 4 MiB, PNG dimensions to 2048 × 2048, one recognition at a time, and six attempts per minute. The provider deadline is 60 seconds.
 
@@ -102,9 +111,9 @@ npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png # opt-in live Gemini r
 
 Tests require Python 3.10+ and host GCC with ASan/UBSan. Only fixed repository-owned C fixtures execute directly on the test host. Host tests disable leak tracing for those fixtures; a separate LSan test runs when tracing is supported and reports a skip otherwise. Production always enables leak detection. API tests exercise the actual request handler with Node streams and injected runner responses; Docker smoke tests verify the deployment boundary separately.
 
-Browser tests serve the production build on loopback port 8878 and shut down their own server afterward. They exercise source/input editing, board download/import, a phone viewport, compiler diagnostics, stale results, and all three demo lessons. Handwriting tests explicitly stub the OCR provider to verify pen capture, review gating, and real compilation after confirmation. They do not measure recognition accuracy. The Docker-dependent checks fail if the runner is unavailable. Browser traces and screenshots are written to the ignored `test-results/` directory.
+Browser tests serve the production build on loopback port 8878 and shut down their own server afterward. They exercise source/input editing, board download/import, a phone viewport, fullscreen, panel resizing, long-program frame growth, curated-header browsing, compiler diagnostics, stale results, and all six demo lessons. Handwriting tests explicitly stub the OCR provider to verify pen capture, review gating, and real compilation after confirmation. They do not measure recognition accuracy. The Docker-dependent checks fail if the runner is unavailable. Browser traces and screenshots are written to the ignored `test-results/` directory.
 
-The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, and actual leak reports. The suite passed 36 Node/Python tests and 11 browser tests. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
+The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, actual leak reports, new library operations, and caller-line contracts. The suite passed 40 Node/Python tests, 14 Docker checks, and 19 browser tests. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
 
 ## Data, AI tools, and reused code
 
@@ -115,7 +124,7 @@ This implementation was generated with OpenAI Codex from `../whiteboard-code-ver
 ## Limits and next steps
 
 - Handwriting recognition requires a configured Gemini key and network access. Typed-only programs bypass OCR.
-- Full C programs only; no snippet wrapping. Includes are restricted to the supported standard headers listed in `runner/runner.py` and `stack.h`.
+- Full C programs only; no snippet wrapping. Includes are restricted to the supported standard headers listed in `runner/runner.py` and the four curated teaching headers. Writing frames can grow, while the 32 KiB source and 8 KiB input execution limits still apply.
 - Highlights cover source lines, not individual tokens. OCR boxes are approximate model estimates. Rotated typed text is extracted but cannot receive a line highlight. Use unrotated, unwrapped typed text for predictable mapping.
 - Sanitizers alter allocation layout. Printed addresses are real, but the application does not claim to identify glibc heap/mmap regions.
 - Scene downloads are local exports, not Git-backed reproducible snapshots. Libraries are not vendored per lesson yet.

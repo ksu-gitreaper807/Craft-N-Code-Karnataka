@@ -6,7 +6,7 @@ test('loads the canvas, edits source, and roundtrips a downloaded board', async 
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Good lessons deserve a test run.' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Boardroom home' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
   await expect(page.locator('.excalidraw canvas').first()).toBeVisible();
   await page.getByRole('tab', { name: 'Source & input' }).click();
@@ -60,8 +60,8 @@ test.describe('real Docker execution', () => {
       const response = await responsePromise;
       expect(response.status()).toBe(200);
       const result = await response.json();
-      expect(result.status).toBe(lesson.id === 'sum' ? 'success' : 'runtime_error');
-      if (lesson.id === 'sum') await expect(page.locator('.terminal pre')).toHaveText('3 + 5 = 8\n');
+      expect(result.status).toBe(lesson.expectedStatus);
+      if (lesson.expectedStdout !== undefined) await expect(page.locator('.terminal pre')).toHaveText(lesson.expectedStdout);
       else await expect(page.locator('.diagnostic').first()).toBeVisible();
       if (lesson.id === 'memory') {
         await expect(page.getByRole('figure', { name: 'Memory addresses printed by the program' })).toBeVisible();
