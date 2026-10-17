@@ -1,4 +1,5 @@
 import { readLimited, providerFailure, tokenUsage } from './gemini-response.mjs';
+import { validLanguage } from '../src/languages.js';
 import { existsSync } from 'node:fs';
 import { loadEnvFile } from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +27,7 @@ function fail(message, status = 400, code = 'invalid_ocr_request') {
 
 export function validateOcrImages(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail('Send board images as a JSON object.');
+  if (!validLanguage(body.language)) throw fail('Choose C or Python.');
   const images = {};
   for (const channel of ['code', 'stdin']) {
     const value = body[channel];
@@ -113,7 +115,8 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
   const images = validateOcrImages(body);
   const config = ocrConfiguration(env);
   if (!config.available) throw fail(config.message, 503, 'ocr_not_configured');
-  const input = [{ type: 'text', text: OCR_PROMPT }];
+  const language = body.language ?? 'c';
+  const input = [{ type: 'text', text: `${OCR_PROMPT}\nThe selected language is ${language === 'python' ? 'Python 3' : 'C11'}. Preserve indentation and blank lines exactly. Never repair colons, indentation, declarations, or punctuation.` }];
   for (const channel of ['code', 'stdin']) {
     if (images[channel]) input.push(
       { type: 'text', text: channel === 'code' ? 'CODE image follows:' : 'STDIN image follows:' },
@@ -188,6 +191,6 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
   return {
     ...transcription, provider: config.provider, model: config.model,
     durationMs: Math.round(performance.now() - started),
-    requiresConfirmation: true,
+    requiresConfirmation: true, language,
   };
 }

@@ -31,11 +31,15 @@ def strip_comments(source):
                   if m[0].startswith(("/*", "//")) else m[0], source)
 
 
-def validate_source(source):
+def validate_source(source, language="c"):
+    if language not in ("c", "python"):
+        return "Choose C or Python."
     if not isinstance(source, str) or not source.strip():
-        return "Write some C code before running."
+        return "Write some code before running."
     if len(source.encode()) > 32_768 or "\0" in source:
         return "Source must be at most 32 KiB and contain no NUL characters."
+    if language == "python":
+        return None
     # Resolve continuations before checking includes; reject macro/absolute includes.
     normalized = strip_comments(re.sub(r"\\\r?\n", "", source))
     for match in re.finditer(r"^\s*#\s*(include\w*|import|embed)\b([^\n]*)", normalized, re.M):
@@ -169,6 +173,34 @@ def teaching_notes(source):
     return notes
 
 
+def python_diagnostics(output):
+    message = output.strip().splitlines()[-1] if output.strip() else "Python error at this line."
+    kind = "compiler" if re.search(r"(?:SyntaxError|IndentationError|TabError):", output) else "runtime"
+    lines = dict.fromkeys(int(match[1]) for match in re.finditer(r'File "[^"\n]*board\.py", line (\d+)', output))
+    return [{"line": line, "column": 1, "severity": "error", "kind": kind, "message": message} for line in lines]
+
+
+def execute_python(source, stdin, result):
+    try:
+        compile(source, "board.py", "exec")
+    except (SyntaxError, ValueError, RecursionError) as error:
+        result.update(status="compile_error", compilerOutput=f'{type(error).__name__}: {error}')
+        if isinstance(error, SyntaxError):
+            result["diagnostics"] = [{"line": error.lineno or 1, "column": error.offset or 1,
+                                      "severity": "error", "kind": "compiler", "message": f'{type(error).__name__}: {error.msg}'}]
+        return result
+    with tempfile.TemporaryDirectory(prefix="board-") as work:
+        path = Path(work, "board.py")
+        path.write_text(source, encoding="utf-8")
+        run = run_phase([sys.executable, "-I", "-B", "-u", str(path)], work, stdin, runtime=True)
+        result.update(stdout=run["stdout"], stderr=run["stderr"], exitCode=run["exitCode"],
+                      diagnostics=python_diagnostics(run["stderr"]))
+        result["status"] = ("timeout" if run["timedOut"] or run["exitCode"] == -signal.SIGXCPU else
+                            "output_limit" if run["outputLimited"] else
+                            "success" if run["exitCode"] == 0 else "runtime_error")
+    return result
+
+
 def execute(payload, lib=LIB, *, detect_leaks=True):
     started = time.monotonic()
     result = {
@@ -177,11 +209,16 @@ def execute(payload, lib=LIB, *, detect_leaks=True):
     }
     source = payload.get("source")
     stdin = payload.get("stdin", "")
-    error = validate_source(source)
+    language = payload.get("language", "c")
+    error = validate_source(source, language)
     if not isinstance(stdin, str) or len(stdin.encode()) > 8192 or "\0" in stdin:
         error = "Input must be text of at most 8 KiB without NUL characters."
     if error:
         result["stderr"] = error
+        return result
+    if language == "python":
+        result = execute_python(source, stdin, result)
+        result["durationMs"] = round((time.monotonic() - started) * 1000)
         return result
     result["notes"] = teaching_notes(source)
     with tempfile.TemporaryDirectory(prefix="board-") as work:

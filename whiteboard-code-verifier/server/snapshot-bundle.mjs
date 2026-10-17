@@ -27,7 +27,7 @@ export async function snapshotBundle(scene, program) {
       if (TRUSTED.has(dependency)) await vendor(dependency);
     }
   }
-  for (const header of includes(program.source)) if (PUBLIC.has(header)) await vendor(header);
+  if (program.language !== 'python') for (const header of includes(program.source)) if (PUBLIC.has(header)) await vendor(header);
   files.set('runner.py', await readAsset('runner.py'));
   files.set('replay.py', await readFile(new URL('./snapshot-replay.py', import.meta.url)));
   files.set('build.sh', '#!/usr/bin/env bash\nset -euo pipefail\ncd -- "$(dirname -- "$0")"\nexec python3 -I replay.py "$@"\n');
@@ -42,7 +42,7 @@ export async function snapshotBundle(scene, program) {
     // Browser-supplied historical evidence, never accepted as a new verification.
     files.set('result.json', JSON.stringify({ provenance: 'browser-reported', result }) + '\n');
   }
-  return { files, manifest: (allFiles) => JSON.stringify({ version: 1, compilerImage: IMAGE,
+  return { files, manifest: (allFiles) => JSON.stringify({ version: 1, compilerImage: IMAGE, language: program.language ?? 'c',
     files: Object.fromEntries([...allFiles].sort(([a], [b]) => a.localeCompare(b)).map(([name, bytes]) => [name, hash(bytes)])),
   }, null, 2) + '\n' };
 }

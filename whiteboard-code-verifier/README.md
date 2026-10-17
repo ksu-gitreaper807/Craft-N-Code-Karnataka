@@ -1,6 +1,6 @@
 # Boardroom — Whiteboard Code Verifier
 
-An executable whiteboard for teachers explaining C. Handwrite or type code in an Excalidraw frame, supply input in blue, and run reviewed code through GCC. Compiler and sanitizer diagnostics link back to the board instead of interrupting the lesson with a separate IDE.
+An executable whiteboard for teachers explaining C and Python. Handwrite or type code in an Excalidraw frame, supply input in blue, and run reviewed code through GCC or Python 3. Compiler and sanitizer diagnostics link back to the board instead of interrupting the lesson with a separate IDE.
 
 The application is self-contained in `whiteboard-code-verifier/`; hackathon submission materials are maintained separately.
 
@@ -20,7 +20,7 @@ See the [technical stack and project overview](docs/technical-overview.md) for t
 - A memory diagram using actual stack-pointer and buffer addresses printed by the memory lesson.
 - Trusted header-only `stack.h`, `linked_list.h`, `queue.h`, and `search.h`, visible in the UI, with teacher callsite attribution.
 - Rule-based teaching notes and downloadable/importable Excalidraw scenes. Downloads include the current result when it still matches the board.
-- Dated lesson snapshots containing the scene, selected program's C source, and stdin, with local Git commits and a History tab.
+- Dated lesson snapshots containing the scene, selected program's C or Python source, and stdin, with local Git commits and a History tab.
 
 ## Run locally
 
@@ -75,17 +75,25 @@ docker info
 
 The socket ACL grants only your current user daemon access and lasts until the socket is recreated, such as on a Docker restart. Docker daemon access is root-equivalent. For persistent user access, follow the [ArchWiki Docker setup](https://wiki.archlinux.org/title/Docker). The application itself runs as your normal user. Starting the service does not enable it at boot.
 
+## Language toggle
+
+Choose **C** or **Python** with the **LANGUAGE** toggle in the right results panel. Changing the language keeps your writing and marks old output stale; handwriting must be reviewed again. The selected language controls OCR context, all three Gemini assistance levels, execution, input cases, downloads, and snapshots. Existing boards without language metadata open as C. Loading a bundled C lesson switches the toggle to C.
+
+Python supports literal stdin, indentation and blank lines, standard-library imports, syntax checks and traceback line highlights. Locally it runs under isolated Python 3 inside the same Docker limits as C; rebuild the runner with `npm run runner:build` after updating. Python has no C sanitizer or curated-header checks. Use its standard library, such as `collections.deque`, `heapq`, `bisect`, and `math`; third-party packages are not installed. The **Libraries** tab describes the C teaching headers.
+
+On Vercel, Python uses the configured Wandbox service, defaulting to `cpython-3.13.8`; `WANDBOX_PYTHON_COMPILER` can override that name. The local Bookworm image currently supplies Python 3.11.2. Use syntax available in your selected execution environment.
+
 ## Gemini pseudocode slider
 
-Choose a level with the **Pseudocode level** slider above the run button. Selecting a level makes no API call. Clicking the run button sends the selected source and literal stdin to the server; Gemini uses the existing `GEMINI_API_KEY` and `OCR_MODEL`. Handwriting first follows the existing OCR review and confirmation step at every level.
+Choose a level with the **Pseudocode level** slider above the run button. Selecting a level makes no API call. Clicking the run button sends the selected source and literal stdin to the server; Gemini uses the existing `GEMINI_API_KEY` and `OCR_MODEL` and targets the selected language. Handwriting first follows the existing OCR review and confirmation step at every level.
 
 | Level | What happens when you run |
 | --- | --- |
-| 1 · Check code | **Verify & run** compiles the original C as written. Gemini then uses the source and compiler messages to explain errors and show suggested corrected C. Suggestions are displayed as advice. Without Gemini configuration, the original C can still run. |
-| 2 · Fill the gaps | **Correct & run** asks Gemini to complete near-C, including omitted `main`, headers, declarations, and semicolons. The returned C is compiled with the selected input. |
-| 3 · Demonstrate an algorithm | **Generate & run** asks Gemini to turn a written algorithm or plain-language steps into a small C demonstration, then compiles it. Assumptions and the exact generated C appear with the real compiler output. |
+| 1 · Check code | **Verify & run** compiles the original C as written. Gemini then uses the source and compiler messages to explain errors and show suggested corrected source. Suggestions are displayed as advice. Without Gemini configuration, the original C can still run. |
+| 2 · Fill the gaps | **Correct & run** asks Gemini to complete near-C, including omitted `main`, headers, declarations, and semicolons. For Python, Gemini completes colons, indentation, imports and syntax. The returned program runs with the selected input. |
+| 3 · Demonstrate an algorithm | **Generate & run** asks Gemini to turn a written algorithm or plain-language steps into a small C or Python demonstration, then runs it. Assumptions and the exact generated C appear with the real compiler output. |
 
-The board keeps the teacher's writing. For typed source, **Use this C on board** explicitly replaces it and switches to Level 1. Generated-code diagnostics refer to the displayed C rather than highlighting unrelated handwriting lines. Editing the board or changing level invalidates earlier results; editing during a Gemini request prevents pending generated C from compiling. Quota failures and timeouts are shown with safe Gemini diagnostics. Generated code can still contain errors; the compiler and execution service determine the actual result. Snapshot `board.c` remains the selected board source; generated C is visible in the run result and is not substituted into the lesson source automatically.
+The board keeps the teacher's writing. For typed source, **Use this C on board** explicitly replaces it and switches to Level 1. Generated-code diagnostics refer to the displayed C rather than highlighting unrelated handwriting lines. Editing the board or changing level invalidates earlier results; editing during a Gemini request prevents pending generated C from compiling. Quota failures and timeouts are shown with safe Gemini diagnostics. Generated code can still contain errors; the compiler and execution service determine the actual result. Snapshot `board.c` or `board.py` remains the selected board source; generated C is visible in the run result and is not substituted into the lesson source automatically.
 
 ## Multiple input cases
 
@@ -115,7 +123,7 @@ snapshots/                         # separate local Git repository, created on f
 
 Every click creates a new folder; existing snapshots are not overwritten. `board.excalidraw` retains the full canvas and selected-frame metadata. `board.c` contains the selected frame's exact typed or confirmed source, and `input.txt` preserves literal input, including blank lines. All snapshot files are recorded together with a `board: <lesson title>` Git commit. This archive is separate from the application repository and has no remote configured automatically.
 
-The **History** tab lists the latest 30 snapshot commits. **Open saved board** restores the committed scene; save current work first because opening replaces the canvas. Saved execution results are not trusted on opening, and handwritten code requires fresh review before running or snapshotting again. The previously confirmed source remains available in the snapshot's `board.c`.
+The **History** tab lists the latest 30 snapshot commits. **Open saved board** restores the committed scene; save current work first because opening replaces the canvas. Saved execution results are not trusted on opening, and handwritten code requires fresh review before running or snapshotting again. The previously confirmed source remains available in the snapshot's `board.c` or `board.py`.
 
 From the app root, inspect the archive with:
 
@@ -180,11 +188,11 @@ handwritten strokes → src/capture.js → POST /api/ocr → server/ocr.mjs → 
 
 The Node API uses only built-in modules. Python's standard library owns compilation, deadlines, output capture, and diagnostic parsing inside the runner. Docker applies no network, read-only root, an unprivileged user, no capabilities, a 64-process limit, 512 MiB memory, one CPU, and a 64 MiB temporary filesystem. Compilation has a 10-second deadline; execution has a 5-second wall deadline and 3-second CPU soft limit. Output is bounded. No host directories or credentials are mounted into runs.
 
-`GET /api/health` reports runner readiness; `GET /api/library/<name>` serves an allowlisted public teaching header (`stack.h`, `linked_list.h`, `queue.h`, or `search.h`). `POST /api/run` accepts `{ "source": "...", "stdin": "..." }` and returns status, stdout, stderr, compiler output, exit code, duration, diagnostics, and notes. Source is limited to 32 KiB and input to 8 KiB. The local API caps concurrency at two and accepts at most 20 run attempts per minute.
+`GET /api/health` reports C runner readiness; `GET /api/health?language=python` checks the Python runtime; `GET /api/library/<name>` serves an allowlisted public teaching header (`stack.h`, `linked_list.h`, `queue.h`, or `search.h`). `POST /api/run` accepts `{ "source": "...", "stdin": "...", "language": "python" }` (omit `language` for C) and returns status, stdout, stderr, compiler output, exit code, duration, diagnostics, and notes. Source is limited to 32 KiB and input to 8 KiB. The local API caps concurrency at two and accepts at most 20 run attempts per minute.
 
-`POST /api/pseudocode` accepts `{ "source": "...", "stdin": "...", "level": 1 }` with optional `compilerOutput` and returns structured C, explanations, issues, and provider metadata. It only prepares source; the browser separately submits the original C at Level 1 or returned C at Levels 2–3 to `/api/run`. The local API shares a one-request concurrency cap and six-per-minute limit between OCR and assistance. The Gemini assistance deadline is 55 seconds.
+`POST /api/pseudocode` accepts `{ "source": "...", "stdin": "...", "level": 1 }` with optional `compilerOutput` and `language: "python"`, and returns structured source, explanations, issues, and provider metadata. It only prepares source; the browser separately submits the original C at Level 1 or returned C at Levels 2–3 to `/api/run`. The local API shares a one-request concurrency cap and six-per-minute limit between OCR and assistance. The Gemini assistance deadline is 55 seconds.
 
-`POST /api/ocr` accepts `{ "code": "data:image/png;base64,...", "stdin": "data:image/png;base64,..." }`; omit a channel when it contains no handwriting. It returns line text, normalized line boxes, ambiguity flags, alternatives, provider/model metadata, and `requiresConfirmation: true`. It never compiles or runs anything. Requests are limited to 4 MiB, PNG dimensions to 2048 × 2048, one recognition at a time, and six attempts per minute. The provider deadline is 60 seconds.
+`POST /api/ocr` accepts `{ "code": "data:image/png;base64,...", "stdin": "data:image/png;base64,..." }`; omit a channel when it contains no handwriting. It returns line text, normalized line boxes, ambiguity flags, alternatives, provider/model metadata, and `requiresConfirmation: true`. Set `language: "python"` for Python indentation and syntax context. It never compiles or runs anything. Requests are limited to 4 MiB, PNG dimensions to 2048 × 2048, one recognition at a time, and six attempts per minute. The provider deadline is 60 seconds.
 
 `POST /api/snapshots` accepts `{ "title": "Lesson name", "scene": { ... } }` and returns the dated folder ID and local Git commit. Source and stdin are derived from the scene, with current OCR confirmation required for handwritten channels. Snapshot bodies are limited to 4 MiB and scene data to 2 MB. `GET /api/snapshots` lists recent history; `GET /api/snapshots/<id>` reads a committed scene. Hosted access uses an exact frontend origin and a runtime API token; see the deployment guide.
 
@@ -202,15 +210,15 @@ npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png # opt-in live Gemini r
 npm run benchmark:ocr -- /path/to/private/manifest.json # opt-in classroom handwriting benchmark
 ```
 
-Tests require Python 3.10+ and host GCC with ASan/UBSan. Only fixed repository-owned C fixtures execute directly on the test host. Host tests disable leak tracing for those fixtures; a separate LSan test runs when tracing is supported and reports a skip otherwise. Production always enables leak detection. API tests exercise the actual request handler with Node streams and injected runner responses; Docker smoke tests verify the deployment boundary separately.
+Tests require Python 3.10+ and host GCC with ASan/UBSan. Only fixed repository-owned C/Python fixtures execute directly on the test host. Host tests disable leak tracing for those fixtures; a separate LSan test runs when tracing is supported and reports a skip otherwise. Production always enables leak detection. API tests exercise the actual request handler with Node streams and injected runner responses; Docker smoke tests verify the deployment boundary separately.
 
 Browser tests serve the production build on loopback port 8878 and shut down their own server afterward. They exercise source/input editing, case runs, board download/import, a phone viewport, fullscreen, panel resizing, long-program frame growth, curated and historical header browsing, compiler diagnostics, stale results, and all six demo lessons. Handwriting tests explicitly stub the OCR provider to verify pen capture, review gating, and real compilation after confirmation. They do not measure recognition accuracy. The Docker-dependent checks fail if the runner is unavailable. Browser traces and screenshots are written to the ignored `test-results/` directory.
 
-The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, actual leak reports, new library operations, and caller-line contracts. Verification passed 73 Node/Python tests and 38 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Snapshot tests use real temporary Git repositories and cover literal file contents, unique folders, confirmation gating, large stroke scenes, failed commits, and preservation of unrelated staged work. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. Live Gemini assistance also generated working C for a syntax correction, a snippet missing boilerplate, and a queue algorithm; all three compiled and ran in Docker. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
+The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, actual leak reports, new library operations, and caller-line contracts. Verification passed 84 Node/Python tests and 43 browser tests; the Docker runner also passes its dedicated execution checks. Snapshot tests use real temporary Git repositories and cover literal file contents, unique folders, confirmation gating, large stroke scenes, failed commits, and preservation of unrelated staged work. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. A live Python algorithm check generated a deque example that printed `4` and `7` in both Docker and Wandbox, and a saved Python snapshot replayed in Docker with stdout `8`. Live Gemini assistance also generated working C for a syntax correction, a snippet missing boilerplate, and a queue algorithm; all three compiled and ran in Docker. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
 
 ## Data, AI tools, and reused code
 
-Gemini is the external vision model used to transcribe handwritten code and stdin. No training dataset is bundled or used for fine-tuning. A teacher reviews its output before execution. Teaching notes remain deterministic pattern matches, not AI-generated explanations. Gemini also checks C, completes near-C, or generates small algorithm demonstrations according to the selected slider level. Level 1 compiles the original source; Levels 2–3 compile the displayed Gemini C. Genuine handwriting accuracy still needs evaluation on classroom samples.
+Gemini is the external vision model used to transcribe handwritten code and stdin. No training dataset is bundled or used for fine-tuning. A teacher reviews its output before execution. Teaching notes remain deterministic pattern matches, not AI-generated explanations. Gemini checks the selected C or Python source, completes partial code, or generates a small algorithm demonstration. Level 1 runs the original source; Levels 2–3 run the displayed Gemini source. Genuine handwriting accuracy still needs evaluation on classroom samples.
 
 The opt-in benchmark accepts a private JSON array such as `[{"id":"sample-01","codeImage":"sample-01.png","codeText":"int main(void) {\n...\n}","correctionSeconds":45}]`. Image paths are relative to the manifest; `stdinImage` and `stdinText` can be supplied together. Prepare gold transcriptions before running the model, and record teacher correction time separately. The command reports character error rate, exact-line rate, critical-symbol error rate, ambiguity count, and provider duration without printing classroom text. It makes one Gemini request per sample, so keep the manifest outside the repository and budget for those requests. No genuine classroom samples are bundled here.
 
@@ -219,10 +227,10 @@ This implementation was generated with OpenAI Codex from `../whiteboard-code-ver
 ## Limits and next steps
 
 - Handwriting recognition requires a configured Gemini key and network access. Typed-only programs bypass OCR.
-- The runner executes full C programs. Gemini can complete snippets or generate C from algorithms at Levels 2–3. Includes are restricted to the supported standard headers listed in `runner/runner.py` and the four curated teaching headers. Writing frames can grow, while the 32 KiB source and 8 KiB input execution limits still apply.
+- The runner executes full C or Python programs. Gemini can complete snippets or generate C from algorithms at Levels 2–3. Includes are restricted to the supported standard headers listed in `runner/runner.py` and the four curated teaching headers. Writing frames can grow, while the 32 KiB source and 8 KiB input execution limits still apply.
 - Highlights cover source lines, not individual tokens. OCR boxes are approximate model estimates. Rotated typed text is extracted but cannot receive a line highlight. Use unrotated, unwrapped typed text for predictable mapping.
 - Sanitizers alter allocation layout. Printed addresses are real, but the application does not claim to identify glibc heap/mmap regions.
-- Lesson snapshots include the scene, C source, input, pinned library headers, compiler image, and a Docker replay script. Git synchronization requires a configured private archive remote.
+- Lesson snapshots include the scene, C or Python source, input, the runtime image, and a Docker replay script. C lessons also vendor referenced teaching headers. Git synchronization requires a configured private archive remote.
 - This is a local prototype, not a public arbitrary-code service. Public deployment needs a separate execution VM, authentication, deployment-level resource controls, and a security review.
 - The Gemini OCR call is not routed through Caveman; gateway credentials/configuration have not been provided.
 

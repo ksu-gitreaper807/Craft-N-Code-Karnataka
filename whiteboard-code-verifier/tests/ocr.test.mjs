@@ -143,3 +143,15 @@ test('surfaces provider failures without leaking keys or provider response bodie
   await assert.rejects(recognizeHandwriting({ code: PNG }, { env, fetchImpl: async () => { throw new DOMException('timed out', 'TimeoutError'); } }), (error) => error.status === 504);
   await assert.rejects(recognizeHandwriting({ code: PNG }, { env, fetchImpl: async () => new Response(JSON.stringify({ status: 'completed', steps: [] })) }), (error) => error.code === 'invalid_ocr_response');
 });
+
+test('Python OCR preserves indentation and passes explicit language context without repairing', async () => {
+  const result = await recognizeHandwriting({ code: PNG, language: 'python' }, { env, logger: () => {}, fetchImpl: async (_url, options) => {
+    const prompt = JSON.parse(options.body).input[0].text;
+    assert.match(prompt, /selected language is Python 3/);
+    assert.match(prompt, /Preserve indentation/);
+    return new Response(JSON.stringify({ status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: JSON.stringify({ code: [line('if True'), line('    print(5)')], stdin: [] }) }] }] }));
+  } });
+  assert.equal(result.language, 'python');
+  assert.deepEqual(result.code.map((entry) => entry.text), ['if True', '    print(5)']);
+  assert.throws(() => validateOcrImages({ code: PNG, language: 'javascript' }), /C or Python/);
+});

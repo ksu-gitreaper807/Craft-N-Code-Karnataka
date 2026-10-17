@@ -3,9 +3,10 @@ import { captureHandwriting } from './capture.js';
 import { extractProgram } from './board.js';
 import { inkFingerprint, makeReviewDraft, reviewedProgram } from './handwriting.js';
 import { apiFetch } from './api.js';
+import { languagePayload } from './languages.js';
 
 const HandwritingPanel = forwardRef(function HandwritingPanel({
-  api, frameId, fingerprint, configuration, hasInk,
+  api, frameId, fingerprint, configuration, hasInk, language = 'c',
   busy, onBusy, onConfirm, onInvalidate,
 }, ref) {
   const [draft, setDraft] = useState(null);
@@ -17,6 +18,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
   const inFlight = useRef(false);
   const stale = draft && draft.frameId === frameId && draft.fingerprint !== fingerprint;
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => { setDraft(null); setAcknowledged(false); setError(''); setDiagnostic(null); }, [language]);
 
   async function read() {
     if (inFlight.current || !api || !hasInk) return;
@@ -42,7 +44,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
       const captures = await captureHandwriting(api, snapshot, frameId);
       const response = await apiFetch('/api/ocr', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
-        body: JSON.stringify(Object.fromEntries(Object.entries(captures).map(([channel, capture]) => [channel, capture.dataUrl]))),
+        body: JSON.stringify({ ...Object.fromEntries(Object.entries(captures).map(([channel, capture]) => [channel, capture.dataUrl])), ...languagePayload(language) }),
       });
       const recognition = await response.json();
       if (!response.ok) {
@@ -73,7 +75,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
     if (!draft || stale || !acknowledged || busy) return;
     try {
       const program = reviewedProgram(draft);
-      onConfirm({ frameId, fingerprint, program, raw: draft.raw,
+      onConfirm({ frameId, fingerprint, language, program: { ...program, language }, raw: draft.raw,
         reviewed: { code: draft.code.map((line) => line.text), stdin: draft.stdin.map((line) => line.text) },
         confirmedAt: new Date().toISOString() });
       setError('');
