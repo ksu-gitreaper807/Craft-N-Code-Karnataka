@@ -1,0 +1,6 @@
+{
+  "functions": {
+    "api/ocr.js": { "maxDuration": 60 },
+    "api/run.js": { "maxDuration": 30, "includeFiles": "runner/lib/*.h" }
+  }
+}

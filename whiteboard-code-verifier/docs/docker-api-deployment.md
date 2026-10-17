@@ -1,12 +1,12 @@
 # Connect the Vercel frontend to a Docker API server
 
-The Vercel build publishes a static frontend. Verification, Gemini OCR, library browsing, and lesson snapshots need the Node API on a persistent Linux server with Docker. The frontend at `https://board-of-c.vercel.app` calls that server over HTTPS. Keep this deployment limited to trusted teachers; the token is a shared classroom access control, not a multi-user account system.
+This is the persistent-server option for Docker-based C execution, Gemini OCR, and Git-backed lesson snapshots. The frontend at `https://board-of-c.vercel.app` calls that server over HTTPS. If you want handwriting and hosted C compilation without your own server, use the [Vercel Functions setup](vercel-serverless.md) instead. Keep this deployment limited to trusted teachers; the token is a shared classroom access control, not a multi-user account system.
 
 ## If you do not have a server yet
 
 Create a small VPS (virtual private server) with a provider of your choice. Choose Ubuntu 24.04 or another supported Linux distribution, at least 2 vCPUs, 4 GB RAM, and about 20 GB of disk for Node, Docker, the GCC image, and lesson snapshots. A region near the classroom reduces latency. Add your SSH public key during setup, enable the provider firewall for SSH and HTTPS (ports 22, 80, and 443), and record the server's public IPv4 address. This server is separate from Vercel and generally has a recurring cost.
 
-You also need a DNS hostname for the API, such as `api.yourdomain.com`. Create an A record pointing it at the VPS IPv4 address. Caddy can then obtain an HTTPS certificate automatically. The server address is what you will put in Vercel's `VITE_BOARDROOM_API_ORIGIN`; `https://board-of-c.vercel.app` remains the frontend address. If you do not want a VPS yet, the app can run entirely on your own Linux machine with the [local setup](../README.md#run-locally), but Vercel's public page cannot execute or read handwriting by itself.
+You also need a DNS hostname for the API, such as `api.yourdomain.com`. Create an A record pointing it at the VPS IPv4 address. Caddy can then obtain an HTTPS certificate automatically. The server address is what you will put in Vercel's `VITE_BOARDROOM_API_ORIGIN`; `https://board-of-c.vercel.app` remains the frontend address. If you do not want a VPS yet, the app can run entirely on your own Linux machine with the [local setup](../README.md#run-locally), or use the Vercel Functions option above.
 
 On a fresh Ubuntu server, install Git, Docker Engine, and Caddy, and install Node.js 22.12 or newer from a supported Node distribution. Then create a dedicated `boardroom` account with Docker access and clone this repository into a directory it owns. Keep the Docker API on loopback; Caddy is the public HTTPS entry point. Docker group membership gives root-equivalent host access, so only the dedicated service account should have it.
 

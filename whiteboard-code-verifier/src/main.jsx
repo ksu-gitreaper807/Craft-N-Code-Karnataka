@@ -14,7 +14,13 @@ import WorkspaceLayout from './WorkspaceLayout.jsx';
 import SnapshotHistory from './SnapshotHistory.jsx';
 import TestCases from './TestCases.jsx';
 import { apiFetch, hasApiToken, setApiToken } from './api.js';
+import stackHeader from '../runner/lib/stack.h?raw';
+import listHeader from '../runner/lib/linked_list.h?raw';
+import queueHeader from '../runner/lib/queue.h?raw';
+import searchHeader from '../runner/lib/search.h?raw';
 import './styles.css';
+
+const bundledHeaders = { 'stack.h': stackHeader, 'linked_list.h': listHeader, 'queue.h': queueHeader, 'search.h': searchHeader };
 
 const labels = {
   success: 'Program completed', compile_error: 'Check the syntax', runtime_error: 'A runtime issue surfaced',
@@ -57,7 +63,7 @@ function App() {
   const [tab, setTab] = useState('output');
   const [health, setHealth] = useState(null);
   const [ocrHealth, setOcrHealth] = useState(null);
-  const [apiConnected, setApiConnected] = useState(false);
+  const [snapshotAvailable, setSnapshotAvailable] = useState(false);
   const [apiAuthRequired, setApiAuthRequired] = useState(false);
   const [apiTokenDraft, setApiTokenDraft] = useState('');
   const [reading, setReading] = useState(false);
@@ -104,16 +110,16 @@ function App() {
       if (!response.ok) throw new Error('API unavailable');
       const data = await response.json();
       if (!data || typeof data.runner?.available !== 'boolean' || typeof data.ocr?.available !== 'boolean') throw new Error('Invalid API response');
-      setApiConnected(true);
+      setSnapshotAvailable(data.snapshots?.available !== false);
       setApiAuthRequired(false);
       setHealth(data.runner);
       setOcrHealth(data.ocr);
     } catch {
       const local = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
       const message = authRequired ? 'The Boardroom API needs a valid access token.' : local ? 'Boardroom API is offline. Start it with npm run dev or npm start.' :
-        'This site has no Boardroom API connection. Board editing and downloads work; verification, handwriting recognition, and snapshots need a hosted Docker-backed API.';
+        'This site has no Boardroom API connection. Board editing and downloads work; verification and handwriting recognition need the hosted API.';
       setApiAuthRequired(authRequired);
-      setApiConnected(false);
+      setSnapshotAvailable(false);
       setHealth({ available: false, message });
       setOcrHealth({ available: false, message });
     }
@@ -284,6 +290,10 @@ function App() {
     setTab('library');
     setLibraryFile(file);
     if (librarySources[file]) return;
+    if (bundledHeaders[file]) {
+      setLibrarySources((previous) => ({ ...previous, [file]: bundledHeaders[file] }));
+      return;
+    }
     try {
       const response = await apiFetch(`/api/library/${file}`);
       if (!response.ok) throw new Error(`Could not load ${file}. Check the API.`);
@@ -330,7 +340,7 @@ function App() {
           <button className="quiet-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={toggleFullscreen}>⛶ <span>{fullscreen ? 'Exit fullscreen' : 'Fullscreen'}</span></button>
           <button className="quiet-button" aria-pressed={!panelVisible} onClick={() => setPanelVisible((visible) => !visible)}>{panelVisible ? 'Hide panel' : 'Show panel'}</button>
           <button className="quiet-button" aria-label="Save lesson snapshot" onClick={saveSnapshot}
-            disabled={!api || !apiConnected || !frameId || running || reading || savingSnapshot || !program.source.trim() || (hasInk && !recognizedProgram)}
+            disabled={!api || !snapshotAvailable || !frameId || running || reading || savingSnapshot || !program.source.trim() || (hasInk && !recognizedProgram)}
             title={hasInk && !recognizedProgram ? 'Confirm the handwriting before saving.' : 'Save board, source, and input with local Git history.'}>
             <Icon name="board" /><span>{savingSnapshot ? 'Saving…' : 'Snapshot'}</span></button>
           <button className="quiet-button" onClick={() => upload.current.click()} disabled={!api || running || reading}><Icon name="upload" /> <span>Open board</span></button>
@@ -388,16 +398,16 @@ function App() {
               /></div>
               <div hidden={tab !== 'cases'}><TestCases program={program} signature={signature}
                 disabled={running || reading || !health?.available || !api || !frameId || !program.source.trim() || Boolean(pseudoDraft && pseudoDraft.originalSignature === signature)} onBusy={setRunning} /></div>
-              {tab === 'history' && !apiConnected && <p className="panel-help">Lesson history needs the Boardroom API. You can still download this board from the top bar.</p>}
-              {tab === 'history' && apiConnected && <SnapshotHistory key={snapshotRevision} onOpen={(scene) => {
+              {tab === 'history' && !snapshotAvailable && <p className="panel-help">Lesson history needs persistent storage. You can download this board from the top bar.</p>}
+              {tab === 'history' && snapshotAvailable && <SnapshotHistory key={snapshotRevision} onOpen={(scene) => {
                 const ink = restoreBoard(scene);
                 setTab(ink ? 'handwriting' : 'source');
                 setNotice(ink ? 'Saved board opened. Review its handwriting again before running. The confirmed source is also stored in board.c.' : 'Saved board opened. Run it to verify the saved code.');
               }} />}
               {tab === 'output' && <>
                 {stale && <div className="stale-notice">The board changed. Run again to update these results.</div>}
-                {!result && !running && <div className="empty-state"><div className="terminal-glyph">&gt;_</div><h3>Let the code do the talking.</h3><p>Output and line-by-line diagnostics will appear here after a run.</p><span>GCC · AddressSanitizer · UBSan</span></div>}
-                {running && <div className="empty-state" role="status"><div className="terminal-glyph">…</div><h3>Testing the lesson</h3><p>Compiling C and checking the run in an isolated container.</p></div>}
+                {!result && !running && <div className="empty-state"><div className="terminal-glyph">&gt;_</div><h3>Let the code do the talking.</h3><p>Output and line-by-line diagnostics will appear here after a run.</p><span>C compiler · real output</span></div>}
+                {running && <div className="empty-state" role="status"><div className="terminal-glyph">…</div><h3>Testing the lesson</h3><p>Compiling C and checking the run.</p></div>}
                 {result && <div aria-live="polite"><div className={`result-status ${result.status === 'success' ? 'passed' : 'failed'}`}><span>{result.status === 'success' ? '✓' : '!'}</span><strong>{labels[result.status] ?? result.status}</strong><small>{result.durationMs} ms</small></div>
                   <div className="terminal"><div className="terminal-title"><span>STDOUT</span><span>exit {result.exitCode ?? '—'}</span></div><pre>{result.stdout || '(no output)'}</pre></div>
                   <MemoryDiagram stdout={result.stdout} />

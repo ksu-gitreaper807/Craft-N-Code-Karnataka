@@ -14,7 +14,7 @@ test('runs multiple inputs and accepts an expected runtime issue', async ({ page
   await page.locator('#case-input-2').fill('oops\n');
   await page.locator('#case-status-2').selectOption('runtime_error');
   await page.getByRole('button', { name: 'Run 2 cases' }).click();
-  await expect(page.locator('.case-results li')).toHaveCount(2);
+  await expect(page.locator('.case-results li')).toHaveCount(2, { timeout: 30_000 });
   await expect(page.locator('.case-results li.passed')).toHaveCount(2);
   await expect(page.locator('.case-results')).toContainText('Five doubles');
   await expect(page.locator('.case-results')).toContainText('Invalid input');

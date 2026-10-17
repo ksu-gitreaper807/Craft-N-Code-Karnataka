@@ -27,3 +27,17 @@ test('a hosted API access token is entered at runtime and sent on reconnect', as
   await expect(page.getByText('Runner ready')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
 });
+
+test('a serverless API keeps C and handwriting available while explaining history storage', async ({ page }) => {
+  await page.route('**/api/health', (route) => route.fulfill({ json: {
+    runner: { available: true, engine: 'wandbox' }, ocr: { available: true, provider: 'gemini' },
+    snapshots: { available: false },
+  } }));
+  await page.goto('/');
+  await expect(page.getByText('Runner ready')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save lesson snapshot' })).toBeDisabled();
+  await page.getByRole('tab', { name: 'History' }).click();
+  await expect(page.getByText('Lesson history needs persistent storage.')).toBeVisible();
+  await page.getByRole('tab', { name: 'Libraries' }).click();
+  await expect(page.locator('pre').filter({ hasText: 'stack_init' }).first()).toBeVisible();
+});

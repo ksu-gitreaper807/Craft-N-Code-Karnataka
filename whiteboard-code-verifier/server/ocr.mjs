@@ -11,7 +11,7 @@ export function ocrConfiguration(env = process.env) {
   return {
     available: Boolean(env.GEMINI_API_KEY?.trim()),
     provider: 'gemini', model: env.OCR_MODEL?.trim() || DEFAULT_MODEL,
-    message: env.GEMINI_API_KEY?.trim() ? undefined : 'Add GEMINI_API_KEY to the app’s .env file, then restart the API.',
+    message: env.GEMINI_API_KEY?.trim() ? undefined : 'Set GEMINI_API_KEY on the API host, then redeploy or restart it.',
   };
 }
 

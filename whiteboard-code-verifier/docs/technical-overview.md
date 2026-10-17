@@ -19,7 +19,7 @@ The teaching goal is to make classroom examples verifiable: demonstrate working 
 | Development/build | Vite 8.2.2 | Frontend development server, API proxy, and production assets |
 | API runtime | Node.js 22.12+ | HTTP endpoints, validation, Gemini requests, and Docker orchestration |
 | Handwriting recognition | Gemini API; default `gemini-3.8-flash` | Image transcription into structured code/input lines |
-| Execution boundary | Linux Docker Engine | Disposable, resource-constrained containers for submitted C programs |
+| Execution boundary | Linux Docker Engine locally; configured Wandbox service on Vercel | Isolated C execution outside the application process |
 | Compiler image | `gcc:14.2.0-bookworm` | GCC toolchain and Debian-based execution environment |
 | Runner implementation | Python 3 standard library | Compilation, input delivery, deadlines, output collection, and diagnostic parsing |
 | Program language | C11 | Full programs compiled with warnings and runtime sanitizers |
@@ -27,6 +27,8 @@ The teaching goal is to make classroom examples verifiable: demonstrate working 
 | Tests | Node's test runner, Python `unittest`, Playwright 1.64.1 | Unit, compiler, container, and browser checks |
 
 Frontend dependencies are pinned in `package.json` and `package-lock.json`. The Dockerfile pins a compiler image tag, rather than an immutable image digest. Node's API and the Python runner use built-in modules; there is no Express server or Gemini SDK dependency. The backend calls Gemini through `fetch` and its REST API.
+
+The Vercel deployment also includes same-origin Functions for health, OCR, and C execution. They require a teacher access token. Vercel has no persistent Docker or Git archive, so its C compiler is an explicitly configured third-party Wandbox service and its Snapshot/History actions are unavailable. See [Vercel serverless deployment](vercel-serverless.md). The Docker implementation below remains the full local/persistent-server mode; its sanitizers and resource limits do not describe the hosted compiler.
 
 ## 3. Architecture and data flow
 
@@ -193,6 +195,6 @@ Development serves the frontend at `http://127.0.0.1:5173` and the API at `http:
 | `npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png` | Opt-in live Gemini request; prints unconfirmed text without executing it |
 | `npm run benchmark:ocr -- /path/to/private/manifest.json` | Opt-in live Gemini measurements against private classroom samples |
 
-Implementation verification passed 63 Node/Python tests and 29 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public and committed header browsing, multiple input cases, all six examples, and saving/reopening real Git-backed snapshots. Snapshot failure cases preserve written files and unrelated staged application changes. The browser suite stubs OCR responses explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
+Implementation verification passed 70 Node/Python tests and 30 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public and committed header browsing, multiple input cases, all six examples, and saving/reopening real Git-backed snapshots. Snapshot failure cases preserve written files and unrelated staged application changes. The browser suite stubs OCR responses explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
 
 These results establish the working integration. The new benchmark command computes character, line, and critical-symbol errors from private sample images and gold transcriptions, plus optional teacher-reported correction time; no genuine classroom samples have been provided or measured. Other material limits are restricted includes, approximate handwriting highlights, a limited deterministic pseudocode vocabulary, browser-session-only input cases, no collaboration or individual authentication, and no public multi-tenant deployment. Caveman gateway observability is not connected in the current implementation.
