@@ -1,0 +1,125 @@
+# Boardroom — Whiteboard Code Verifier
+
+An executable whiteboard for teachers explaining C. Handwrite or type code in an Excalidraw frame, supply input in blue, and run reviewed code through GCC. Compiler and sanitizer diagnostics link back to the board instead of interrupting the lesson with a separate IDE.
+
+The application is self-contained in `whiteboard-code-verifier/`; hackathon submission materials are maintained separately.
+
+See the [technical stack and project overview](docs/technical-overview.md) for the architecture, implementation details, API, execution limits, and current scope.
+
+## First working slice
+
+- React + Excalidraw canvas; one frame represents one C program.
+- Gemini handwriting recognition with separate code/input images, editable transcription, alternate readings, and mandatory teacher confirmation.
+- Raw text extraction with preserved blank lines and a source-line-to-element map.
+- Blue (`#1971c2`) text supplies stdin; other annotation colors are ignored.
+- Source/input editors, real stdout/stderr, compiler diagnostics, ASan/UBSan reports, and canvas highlights.
+- Three editable demo lessons: input/output, use-after-free, and a stack contract failure.
+- A memory diagram using actual stack-pointer and buffer addresses printed by the memory lesson.
+- Trusted header-only `stack.h`, visible in the UI, with teacher callsite attribution.
+- Rule-based teaching notes and downloadable/importable Excalidraw scenes. Downloads include the current result when it still matches the board.
+
+## Run locally
+
+Prerequisites: Node.js 22.12+ and Linux Docker Engine with a working daemon. GCC runs **inside Docker**; the application never falls back to executing submitted programs on the host.
+
+```bash
+cd whiteboard-code-verifier
+npm ci
+npm run runner:build
+npm run dev
+```
+
+Open **http://127.0.0.1:5173**. Vite proxies `/api` to the loopback API on port 8787. The launcher copies Excalidraw fonts locally, so the canvas does not need its font CDN during a lesson. The optional interface web fonts fall back to system fonts when offline.
+
+### Configure handwriting recognition
+
+Copy `.env.example` to `.env` and set `GEMINI_API_KEY` using a key from your Google AI Studio project. Restart the API after changing it. Keep `.env` private; it is ignored by Git. `OCR_MODEL` selects the Gemini model available to your project. Typed code continues to work without a key.
+
+Click **New handwritten board**, then use **Pen: code** (black) and **Pen: input** (blue). Click **Read & review handwriting**. Compare the image with every extracted line, correct ambiguous readings, check the confirmation box, then click **Use confirmed code**. A separate **Verify & run** executes exactly that reviewed text. New strokes invalidate confirmation.
+
+The API sends only the selected frame's relevant ink crops to Gemini. Other annotation colors and frame borders are excluded. API keys stay on the backend. OCR line positions are approximate; ambiguity labels are model reports, not numeric confidence guarantees. See [OCR options and decision](docs/ocr-options.md) for the researched alternatives and accuracy-evaluation plan.
+
+For a production build served locally:
+
+```bash
+npm run build
+npm start
+```
+
+Open **http://127.0.0.1:8787**. `PORT` can change the production API port. Development uses port 8787 for its proxy. The server binds to loopback and rejects foreign hosts/origins; public hosting is not configured.
+
+### Docker on CachyOS / Arch Linux
+
+```bash
+sudo pacman -S --needed docker docker-buildx
+sudo systemctl start docker.service
+sudo setfacl -m "u:$(id -un):rw" /run/docker.sock
+docker info
+```
+
+The socket ACL grants only your current user daemon access and lasts until the socket is recreated, such as on a Docker restart. Docker daemon access is root-equivalent. For persistent user access, follow the [ArchWiki Docker setup](https://wiki.archlinux.org/title/Docker). The application itself runs as your normal user. Starting the service does not enable it at boot.
+
+## Try a lesson
+
+1. Run **Input & output**: blue text `3 5` produces `3 + 5 = 8`.
+2. Open **Source & input**, remove a semicolon, and run again. Inspect the compiler message and its highlighted line. Restore the semicolon.
+3. Load **A memory mistake**. Run to see the actual use-after-free diagnostic. Move `free(values)` below the last `printf`, then rerun.
+4. Load **Under the abstraction**. The empty-stack contract points to `stack_pop`. Add `stack_push(&s, 42);` before the pop, then rerun.
+
+Download before switching lessons or refreshing to retain edits. Imported boards need at least one frame. Downloads preserve the ink, reviewed OCR provenance, and current run result. Importing does not trust saved confirmation or verification results: recognize/review handwriting again and rerun. Editing after a run marks the old result stale and removes its highlights.
+
+## Architecture
+
+```text
+src/main.jsx → src/board.js → POST /api/run
+                              server/index.mjs
+                                → server/sandbox.mjs
+                                  → disposable Docker container
+                                    → runner/runner.py → GCC → program
+                                ← diagnostics, output, teaching notes
+src/canvas.js ← source line map ← result
+
+handwritten strokes → src/capture.js → POST /api/ocr → server/ocr.mjs → Gemini
+  → editable review → teacher confirmation → the same POST /api/run path
+```
+
+The Node API uses only built-in modules. Python's standard library owns compilation, deadlines, output capture, and diagnostic parsing inside the runner. Docker applies no network, read-only root, an unprivileged user, no capabilities, a 64-process limit, 512 MiB memory, one CPU, and a 64 MiB temporary filesystem. Compilation has a 10-second deadline; execution has a 5-second wall deadline and 3-second CPU soft limit. Output is bounded. No host directories or credentials are mounted into runs.
+
+`GET /api/health` reports runner readiness; `GET /api/library/stack.h` serves the compiled library source. `POST /api/run` accepts `{ "source": "...", "stdin": "..." }` and returns status, stdout, stderr, compiler output, exit code, duration, diagnostics, and notes. Source is limited to 32 KiB and input to 8 KiB. The local API caps concurrency at two and accepts at most 20 run attempts per minute.
+
+`POST /api/ocr` accepts `{ "code": "data:image/png;base64,...", "stdin": "data:image/png;base64,..." }`; omit a channel when it contains no handwriting. It returns line text, normalized line boxes, ambiguity flags, alternatives, provider/model metadata, and `requiresConfirmation: true`. It never compiles or runs anything. Requests are limited to 4 MiB, PNG dimensions to 2048 × 2048, one recognition at a time, and six attempts per minute. The provider deadline is 60 seconds.
+
+## Verification
+
+```bash
+npm test                       # Node handler/mapping tests + trusted GCC fixtures
+npm run test:docker            # lessons, EOF, timeout, output limit, and leak detection
+npx playwright install chromium # once, for browser checks
+npm run build                 # frontend production build
+npm run test:browser           # desktop/mobile UI, import/export, real Docker runs
+npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png # opt-in live Gemini request
+```
+
+Tests require Python 3.10+ and host GCC with ASan/UBSan. Only fixed repository-owned C fixtures execute directly on the test host. Host tests disable leak tracing for those fixtures; a separate LSan test runs when tracing is supported and reports a skip otherwise. Production always enables leak detection. API tests exercise the actual request handler with Node streams and injected runner responses; Docker smoke tests verify the deployment boundary separately.
+
+Browser tests serve the production build on loopback port 8878 and shut down their own server afterward. They exercise source/input editing, board download/import, a phone viewport, compiler diagnostics, stale results, and all three demo lessons. Handwriting tests explicitly stub the OCR provider to verify pen capture, review gating, and real compilation after confirmation. They do not measure recognition accuracy. The Docker-dependent checks fail if the runner is unavailable. Browser traces and screenshots are written to the ignored `test-results/` directory.
+
+The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, and actual leak reports. The suite passed 36 Node/Python tests and 11 browser tests. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
+
+## Data, AI tools, and reused code
+
+Gemini is the external vision model used to transcribe handwritten code and stdin. No training dataset is bundled or used for fine-tuning. A teacher reviews its output before execution. Teaching notes remain deterministic pattern matches, not AI-generated explanations. There is no automatic code repair. Genuine handwriting accuracy still needs evaluation on classroom samples.
+
+This implementation was generated with OpenAI Codex from `../whiteboard-code-verifier.md`. It reuses Excalidraw and React (MIT), Vite (MIT), the GCC container/toolchain, and Python. The curated stack header adapts the implementation in the project notes. Excalidraw integration follows its [official API documentation](https://docs.excalidraw.com/docs/@excalidraw/excalidraw/api/excalidraw-element-skeleton).
+
+## Limits and next steps
+
+- Handwriting recognition requires a configured Gemini key and network access. Typed-only programs bypass OCR.
+- Full C programs only; no snippet wrapping. Includes are restricted to the supported standard headers listed in `runner/runner.py` and `stack.h`.
+- Highlights cover source lines, not individual tokens. OCR boxes are approximate model estimates. Rotated typed text is extracted but cannot receive a line highlight. Use unrotated, unwrapped typed text for predictable mapping.
+- Sanitizers alter allocation layout. Printed addresses are real, but the application does not claim to identify glibc heap/mmap regions.
+- Scene downloads are local exports, not Git-backed reproducible snapshots. Libraries are not vendored per lesson yet.
+- This is a local prototype, not a public arbitrary-code service. Public deployment needs a separate execution VM, authentication, deployment-level resource controls, and a security review.
+- The Gemini OCR call is not routed through Caveman; gateway credentials/configuration have not been provided.
+
+Keep changes focused; use two-space JavaScript/JSX indentation and four-space C/Python indentation. Run the focused test suite before contributing. Dependencies are pinned in `package.json` and `package-lock.json`; use `npm ci` for reproducible installation and update the lockfile when changing dependencies.

@@ -1,0 +1,30 @@
+{
+  "name": "whiteboard-code-verifier",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite --host 127.0.0.1",
+    "dev:api": "node --watch server/index.mjs",
+    "build": "node scripts/fonts.mjs && vite build",
+    "start": "node server/index.mjs",
+    "test": "node --test --test-isolation=none tests/*.test.mjs && python3 -m unittest discover -s tests -p 'test_*.py' -v",
+    "runner:build": "docker build -t whiteboard-runner:local runner",
+    "test:docker": "node scripts/check-runner.mjs",
+    "test:browser": "playwright test",
+    "test:ocr": "node scripts/check-ocr.mjs"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "vite": "8.2.2"
+  }
+}

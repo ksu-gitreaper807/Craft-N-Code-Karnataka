@@ -2,6 +2,28 @@
 
 State qualifier for the Craft N Code National Hackathon at IIIT Bhubaneswar, organised by RV College of Engineering and RVITM.
 
+## Boardroom project in this fork
+
+This fork includes **Boardroom — Whiteboard Code Verifier**, an executable digital whiteboard for teaching C. Teachers write or type code, review Gemini handwriting transcription, and run it through GCC in Docker, with diagnostics linked back to the board.
+
+- [Application README and setup](whiteboard-code-verifier/README.md)
+- [Technical stack and project overview](whiteboard-code-verifier/docs/technical-overview.md)
+- [OCR options and evaluation](whiteboard-code-verifier/docs/ocr-options.md)
+- [Original project notes](whiteboard-code-verifier.md)
+
+With Node.js 22.12+ and a working Linux Docker daemon:
+
+```bash
+cd whiteboard-code-verifier
+npm ci
+npm run runner:build
+npm run dev
+```
+
+Open http://127.0.0.1:5173. For handwriting recognition, configure `GEMINI_API_KEY` in the app's private `.env` file; see `.env.example`. Typed code works without OCR credentials.
+
+The original hackathon information follows.
+
 | | |
 |---|---|
 | Theme | AI for Education |

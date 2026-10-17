@@ -1,0 +1,11 @@
+node_modules/
+dist/
+public/fonts/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.npm-cache/
+test-results/
+playwright-report/
