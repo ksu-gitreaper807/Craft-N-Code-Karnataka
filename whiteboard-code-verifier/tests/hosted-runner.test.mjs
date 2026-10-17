@@ -18,6 +18,7 @@ test('hosted runner sends code, input, and teaching headers to C compiler', asyn
   const payload = JSON.parse(request.options.body);
   assert.equal(payload.compiler, 'gcc-head-c');
   assert.equal(payload.stdin, '2\n');
+  assert.equal(payload['compiler-option-raw'], '-I.');
   assert.deepEqual(payload.codes.map((file) => file.file), ['stack.h', 'linked_list.h', 'queue.h', 'search.h', 'board_contract.h']);
   assert.match(payload.codes.find((file) => file.file === 'queue.h').code, /#include "board_contract.h"/);
   assert.match(payload.codes.find((file) => file.file === 'board_contract.h').code, /#ifndef/);

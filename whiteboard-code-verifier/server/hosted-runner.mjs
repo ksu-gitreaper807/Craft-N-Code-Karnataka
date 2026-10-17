@@ -65,7 +65,8 @@ export async function runHostedProgram(body, { env = process.env, fetchImpl = fe
       method: 'POST', signal: AbortSignal.timeout(25_000),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ compiler: env.WANDBOX_C_COMPILER || 'gcc-head-c',
-        code: body.source, codes, stdin: body.stdin ?? '', save: false }),
+        code: body.source, codes, stdin: body.stdin ?? '', save: false,
+        'compiler-option-raw': '-I.' }),
     });
   } catch {
     throw Object.assign(new Error('Could not reach the hosted C compiler.'), { status: 502 });
