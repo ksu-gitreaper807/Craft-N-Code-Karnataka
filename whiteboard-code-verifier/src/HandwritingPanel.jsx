@@ -9,6 +9,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
 }, ref) {
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState('');
+  const [diagnostic, setDiagnostic] = useState(null);
   const [selected, setSelected] = useState({ channel: 'code', index: 0 });
   const [acknowledged, setAcknowledged] = useState(false);
   const controller = useRef(null);
@@ -19,6 +20,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
   async function read() {
     if (inFlight.current || !api || !hasInk) return;
     setError('');
+    setDiagnostic(null);
     if (!configuration?.available) {
       setError(configuration?.message ?? 'The OCR service is unavailable. Check the API.');
       return;
@@ -42,11 +44,15 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
         body: JSON.stringify(Object.fromEntries(Object.entries(captures).map(([channel, capture]) => [channel, capture.dataUrl]))),
       });
       const recognition = await response.json();
-      if (!response.ok) throw new Error(recognition.error ?? `OCR returned HTTP ${response.status}.`);
+      if (!response.ok) {
+        setDiagnostic(recognition.diagnostic ?? null);
+        throw new Error(recognition.error ?? `OCR returned HTTP ${response.status}.`);
+      }
       setDraft(makeReviewDraft(recognition, captures, typed, snapshotFingerprint, frameId));
       setSelected({ channel: 'code', index: 0 });
     } catch (caught) {
-      setError(caught.name === 'AbortError' ? 'Handwriting recognition timed out. Nothing was executed.' : caught.message);
+      if (caught.name === 'AbortError') setDiagnostic({ provider: 'gemini', reason: 'browser_timeout', quotaStatus: 'unknown' });
+      setError(caught.name === 'AbortError' ? 'Handwriting recognition timed out. Gemini token/quota status is unknown. Nothing was executed.' : caught.message);
     } finally {
       clearTimeout(timeout);
       inFlight.current = false;
@@ -80,6 +86,11 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
     {!configuration?.available && <div className="runner-notice">{configuration?.message ?? 'Checking OCR configuration…'}</div>}
     {!hasInk && <p className="panel-help">Choose “New handwritten board”, then write with “Pen: code” or “Pen: input”.</p>}
     {error && <div className="error-notice" role="alert">{error}</div>}
+    {error && diagnostic && <details className="raw-output"><summary>Gemini OCR diagnostics</summary>
+      <pre>{JSON.stringify(diagnostic, null, 2)}</pre>
+      <p>Token usage logs describe individual requests; remaining account quota is not returned here.</p>
+      <a href="https://aistudio.google.com/usage" target="_blank" rel="noreferrer">Check Gemini usage and limits in AI Studio</a>
+    </details>}
     {stale && <div className="stale-notice">The ink changed. Read the frame again before confirming.</div>}
     {draft && draft.frameId === frameId && <>
       <p className="ocr-provenance">{draft.raw.provider} · {draft.raw.model} · {draft.raw.durationMs} ms</p>

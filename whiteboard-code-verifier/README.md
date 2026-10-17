@@ -48,6 +48,10 @@ Click **New handwritten board**, then use **Pen: code** (black) and **Pen: input
 
 The API sends only the selected frame's relevant ink crops to Gemini. Other annotation colors and frame borders are excluded. API keys stay on the backend. OCR line positions are approximate; ambiguity labels are model reports, not numeric confidence guarantees. See [OCR options and decision](docs/ocr-options.md) for the researched alternatives and accuracy-evaluation plan.
 
+When recognition fails, expand **Gemini OCR diagnostics** in the Handwriting tab. The API terminal also prints `[ocr:gemini]` entries with the model, elapsed time, HTTP status, and quota classification. `token_limit_reached` means Gemini identified a token quota limit; `quota_or_rate_limit_reached` means HTTP 429 without enough evidence to identify a token limit; `credits_exhausted` means HTTP 402. A timeout reports `unknown`, not exhausted tokens. A token limit can be temporary, such as a per-minute limit. Check the linked [AI Studio usage page](https://aistudio.google.com/usage) for the project's actual limits and billing.
+
+Successful requests log numeric input, output, thought, and total token counters when supplied by Gemini. These describe that request, not remaining account tokens. Logs exclude API keys, captured images, transcriptions, and raw provider error bodies. `npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png` makes one opt-in live request with the same logging.
+
 For a production build served locally:
 
 ```bash

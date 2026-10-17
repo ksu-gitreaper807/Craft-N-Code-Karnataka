@@ -118,7 +118,36 @@ async function readLimited(response, limit = 256 * 1024) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-export async function recognizeHandwriting(body, { env = process.env, fetchImpl = fetch } = {}) {
+function providerFailure(response, data) {
+  const error = data?.error;
+  const rawStatus = error?.status ?? error?.code;
+  const normalized = typeof rawStatus === 'string' ? rawStatus.toUpperCase() : '';
+  const providerStatus = ['RESOURCE_EXHAUSTED', 'PERMISSION_DENIED', 'UNAUTHENTICATED', 'INVALID_ARGUMENT',
+    'NOT_FOUND', 'UNAVAILABLE', 'DEADLINE_EXCEEDED', 'INTERNAL', 'FAILED_PRECONDITION'].includes(normalized) ? normalized : null;
+  const details = Array.isArray(error?.details) ? error.details : [];
+  const violations = details.filter((item) => item?.['@type'] === 'type.googleapis.com/google.rpc.QuotaFailure')
+    .flatMap((item) => Array.isArray(item.violations) ? item.violations : []);
+  const tokenLimit = violations.some((item) => /token/i.test(`${item?.quotaMetric ?? ''} ${item?.quotaId ?? ''}`)) ||
+    (typeof error?.message === 'string' && /quota[^.\n]*token|token[^.\n]*(?:quota|limit)|\bTP[MD]\b/i.test(error.message));
+  const retryInfo = details.find((item) => item?.['@type'] === 'type.googleapis.com/google.rpc.RetryInfo');
+  const bodyRetry = typeof retryInfo?.retryDelay === 'string' ? retryInfo.retryDelay.replace(/s$/, '') : null;
+  const rawRetry = response.headers.get('retry-after') ?? bodyRetry;
+  const seconds = Number(rawRetry);
+  const retryAfterSeconds = rawRetry != null && Number.isFinite(seconds) && seconds >= 0 ? Math.min(86_400, Math.ceil(seconds)) : null;
+  return { providerStatus, retryAfterSeconds,
+    quotaStatus: response.status === 402 ? 'credits_exhausted' : response.status === 429 ?
+      (tokenLimit ? 'token_limit_reached' : 'quota_or_rate_limit_reached') : 'unknown' };
+}
+
+function tokenUsage(usage) {
+  // Only copy known numeric counters, never arbitrary provider metadata.
+  return Object.fromEntries(['total_input_tokens', 'total_output_tokens', 'total_thought_tokens', 'total_tokens']
+    .filter((name) => Number.isSafeInteger(usage?.[name]) && usage[name] >= 0)
+    .map((name) => [name, usage[name]]));
+}
+
+export async function recognizeHandwriting(body, { env = process.env, fetchImpl = fetch,
+  logger = (entry) => console.info('[ocr:gemini]', JSON.stringify(entry)) } = {}) {
   const images = validateOcrImages(body);
   const config = ocrConfiguration(env);
   if (!config.available) throw fail(config.message, 503, 'ocr_not_configured');
@@ -130,6 +159,23 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
     );
   }
   const started = performance.now();
+  function report(event, fields) {
+    const diagnostic = { provider: 'gemini', model: config.model,
+      durationMs: Math.round(performance.now() - started), ...fields };
+    // Observability must never make an otherwise usable request fail.
+    try { logger({ event, ...diagnostic }); } catch {}
+    return diagnostic;
+  }
+  function requestFailure(message, status, code, fields) {
+    return Object.assign(fail(message, status, code), { ocrDiagnostic: report('failure', fields) });
+  }
+  function transportFailure(error, httpStatus = null) {
+    const timeout = ['TimeoutError', 'AbortError'].includes(error.name);
+    return requestFailure(timeout ?
+      'Gemini OCR timed out after 60 seconds. Token/quota exhaustion is unconfirmed; check Gemini usage or try a smaller board.' :
+      'Could not reach Gemini. Token/quota status is unknown; check your network and Gemini usage.',
+    timeout ? 504 : 502, 'ocr_unavailable', { reason: timeout ? 'timeout' : 'network_error', httpStatus, quotaStatus: 'unknown' });
+  }
   let response;
   try {
     response = await fetchImpl(ENDPOINT, {
@@ -142,15 +188,23 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
       }),
     });
   } catch (error) {
-    const timeout = ['TimeoutError', 'AbortError'].includes(error.name);
-    throw fail(timeout ? 'Handwriting recognition timed out. Try a smaller board.' : 'Could not reach Gemini. Check your network and try again.', timeout ? 504 : 502, 'ocr_unavailable');
+    throw transportFailure(error);
   }
   if (!response.ok) {
-    await response.body?.cancel();
+    let data;
+    // Error payloads can contain quota details. Consume a bounded body but never log it.
+    try { data = await readLimited(response, 16 * 1024); } catch {}
+    const diagnostic = providerFailure(response, data);
+    const quota = diagnostic.quotaStatus;
     const message = [401, 403].includes(response.status) ? 'Gemini rejected the API key or model access.' :
-      response.status === 429 ? 'Gemini’s quota or rate limit was reached. Try again later.' :
+      response.status === 402 ? 'Gemini reports depleted billing credits. Check billing in Google AI Studio.' :
+      response.status === 429 ? (quota === 'token_limit_reached' ?
+        'Gemini reports a token quota limit was reached. Check usage and limits in Google AI Studio.' :
+        'Gemini reports a quota or rate limit was reached. This does not confirm token exhaustion. Check Google AI Studio.') :
       response.status === 404 ? 'The configured OCR_MODEL is unavailable. Check your model access.' : 'Gemini could not process this board image.';
-    throw fail(`${message} (HTTP ${response.status})`, response.status === 429 ? 429 : 502, 'ocr_provider_error');
+    const retry = diagnostic.retryAfterSeconds == null ? '' : ` Retry after ${diagnostic.retryAfterSeconds} seconds.`;
+    throw requestFailure(`${message} (HTTP ${response.status})${retry}`, response.status === 429 ? 429 : 502,
+      'ocr_provider_error', { reason: 'provider_error', httpStatus: response.status, ...diagnostic });
   }
   let data;
   let transcription;
@@ -163,9 +217,12 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
     const text = lastOutput?.content?.filter((part) => part.type === 'text').map((part) => part.text).join('');
     transcription = validateTranscription(JSON.parse(text), images);
   } catch (error) {
-    if (error.code === 'invalid_ocr_response') throw error;
-    throw fail('Gemini did not return a complete, readable transcription. Nothing was executed.', 502, 'invalid_ocr_response');
+    if (['TimeoutError', 'AbortError'].includes(error.name)) throw transportFailure(error, response.status);
+    throw requestFailure(error.code === 'invalid_ocr_response' ? error.message :
+      'Gemini did not return a complete, readable transcription. Nothing was executed.',
+    502, 'invalid_ocr_response', { reason: 'invalid_response', httpStatus: response.status, quotaStatus: 'unknown' });
   }
+  report('success', { httpStatus: response.status, quotaStatus: 'not_reported', usage: tokenUsage(data.usage) });
   return {
     ...transcription, provider: config.provider, model: config.model,
     durationMs: Math.round(performance.now() - started),

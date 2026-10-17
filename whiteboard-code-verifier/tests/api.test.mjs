@@ -153,3 +153,15 @@ test('OCR payload cap is independent of source cap and foreign origins are rejec
   assert.equal((await base('/api/ocr', { ...options, body: 'x'.repeat(4 * 1024 * 1024 + 1) })).status, 413);
   assert.equal((await base('/api/ocr', { ...options, headers: { ...options.headers, Origin: 'https://unrelated.example' } })).status, 403);
 });
+
+test('returns safe Gemini quota diagnostics to the browser', async (t) => {
+  const diagnostic = { provider: 'gemini', httpStatus: 429, quotaStatus: 'token_limit_reached', retryAfterSeconds: 12 };
+  const base = await start(t, { recognize: async () => {
+    throw Object.assign(new Error('Gemini reports a token quota limit was reached.'), {
+      status: 429, code: 'ocr_provider_error', ocrDiagnostic: diagnostic,
+    });
+  } });
+  const response = await base('/api/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  assert.equal(response.status, 429);
+  assert.deepEqual((await response.json()).diagnostic, diagnostic);
+});

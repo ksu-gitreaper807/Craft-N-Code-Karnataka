@@ -109,6 +109,30 @@ test('shows a provider failure without executing unreviewed code', async ({ page
   expect(runs).toBe(0);
 });
 
+for (const scenario of [
+  { status: 429, quotaStatus: 'token_limit_reached', error: 'Gemini reports a token quota limit was reached. (HTTP 429)' },
+  { status: 504, quotaStatus: 'unknown', error: 'Gemini OCR timed out. Token/quota exhaustion is unconfirmed.' },
+]) {
+  test(`shows Gemini ${scenario.quotaStatus} diagnostics without executing code`, async ({ page }) => {
+    await configureProviderFixture(page);
+    let runs = 0;
+    page.on('request', (request) => { if (request.url().endsWith('/api/run')) runs += 1; });
+    await page.route('**/api/ocr', (route) => route.fulfill({ status: scenario.status, json: {
+      error: scenario.error,
+      diagnostic: { provider: 'gemini', quotaStatus: scenario.quotaStatus, httpStatus: scenario.status === 429 ? 429 : null },
+    } }));
+    await page.goto('/');
+    await page.getByRole('button', { name: '+ New handwritten board' }).click();
+    await drawStroke(page);
+    await page.getByRole('button', { name: 'Read & review handwriting' }).click();
+    await expect(page.getByRole('alert')).toHaveText(scenario.error);
+    await page.getByText('Gemini OCR diagnostics', { exact: true }).click();
+    await expect(page.locator('.handwriting-panel .raw-output pre')).toContainText(scenario.quotaStatus);
+    await expect(page.getByRole('link', { name: 'Check Gemini usage and limits in AI Studio' })).toHaveAttribute('href', 'https://aistudio.google.com/usage');
+    expect(runs).toBe(0);
+  });
+}
+
 test('ink changed during recognition cannot be confirmed or executed', async ({ page }) => {
   await configureProviderFixture(page);
   let release;

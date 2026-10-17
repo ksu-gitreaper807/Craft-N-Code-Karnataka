@@ -41,9 +41,13 @@ test('rejects malformed geometry, multiline entries, and unbounded responses', (
 
 test('uses the documented Gemini image/schema request and validates the structured response', async () => {
   let sent;
-  const result = await recognizeHandwriting({ code: PNG }, { env, fetchImpl: async (url, options) => {
+  const logs = [];
+  const result = await recognizeHandwriting({ code: PNG }, { env, logger: (entry) => logs.push(entry), fetchImpl: async (url, options) => {
     sent = { url, options, body: JSON.parse(options.body) };
-    return new Response(JSON.stringify({ status: 'completed', steps: [
+    return new Response(JSON.stringify({ status: 'completed', usage: {
+      total_input_tokens: 1100, total_output_tokens: 200, total_thought_tokens: 300,
+      total_tokens: 1600, unexpected: env.GEMINI_API_KEY,
+    }, steps: [
       { type: 'thought', content: [{ type: 'text', text: 'not the transcription' }] },
       { type: 'model_output', content: [{ type: 'text', text: JSON.stringify({ code: [line('int main(void) {}')], stdin: [] }) }] },
     ] }));
@@ -59,6 +63,74 @@ test('uses the documented Gemini image/schema request and validates the structur
   assert.equal(result.code[0].text, 'int main(void) {}');
   assert.equal(result.requiresConfirmation, true);
   assert.equal(result.provider, 'gemini');
+  assert.deepEqual(logs[0].usage, { total_input_tokens: 1100, total_output_tokens: 200, total_thought_tokens: 300, total_tokens: 1600 });
+  assert.equal(logs[0].event, 'success');
+  assert.equal(logs[0].quotaStatus, 'not_reported');
+  assert.ok(!JSON.stringify(logs).includes(env.GEMINI_API_KEY));
+});
+
+test('distinguishes token quotas, general limits, and depleted credits without exposing provider payloads', async () => {
+  const scenarios = [
+    { status: 429, code: 'resource_exhausted', metric: 'generate_content_free_tier_input_token_count',
+      expected: 'token_limit_reached', message: /token quota limit/, retry: '5s' },
+    { status: 429, code: 'RESOURCE_EXHAUSTED', metric: 'generate_content_free_tier_requests',
+      expected: 'quota_or_rate_limit_reached', message: /does not confirm token exhaustion/, retry: '2s' },
+    { status: 402, code: 'FAILED_PRECONDITION', expected: 'credits_exhausted', message: /depleted billing credits/ },
+  ];
+  for (const scenario of scenarios) {
+    const logs = [];
+    const details = [
+      { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaMetric: scenario.metric }] },
+      { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: scenario.retry },
+    ];
+    const fetchImpl = async () => new Response(JSON.stringify({ error: {
+      code: scenario.code, message: `private provider message ${env.GEMINI_API_KEY}`, details,
+    } }), { status: scenario.status });
+    await assert.rejects(recognizeHandwriting({ code: PNG }, { env, fetchImpl, logger: (entry) => logs.push(entry) }), (error) => {
+      assert.equal(error.ocrDiagnostic.quotaStatus, scenario.expected);
+      assert.equal(error.ocrDiagnostic.httpStatus, scenario.status);
+      assert.equal(error.ocrDiagnostic.providerStatus, scenario.code.toUpperCase());
+      if (scenario.retry) assert.equal(error.ocrDiagnostic.retryAfterSeconds, Number.parseInt(scenario.retry));
+      assert.match(error.message, scenario.message);
+      assert.ok(!JSON.stringify({ message: error.message, logs, diagnostic: error.ocrDiagnostic }).includes(env.GEMINI_API_KEY));
+      return true;
+    });
+    assert.equal(logs[0].event, 'failure');
+  }
+});
+
+test('timeouts before headers and during the body leave quota status unknown', async () => {
+  const timeout = () => new DOMException(`private ${env.GEMINI_API_KEY}`, 'TimeoutError');
+  const fetches = [
+    async () => { throw timeout(); },
+    async () => new Response(new ReadableStream({ start(controller) { controller.error(timeout()); } })),
+  ];
+  for (const [index, fetchImpl] of fetches.entries()) {
+    const logs = [];
+    await assert.rejects(recognizeHandwriting({ code: PNG }, { env, fetchImpl, logger: (entry) => logs.push(entry) }), (error) => {
+      assert.equal(error.status, 504);
+      assert.equal(error.ocrDiagnostic.reason, 'timeout');
+      assert.equal(error.ocrDiagnostic.quotaStatus, 'unknown');
+      assert.equal(error.ocrDiagnostic.httpStatus, index ? 200 : null);
+      assert.match(error.message, /exhaustion is unconfirmed/);
+      assert.ok(!error.message.includes(env.GEMINI_API_KEY));
+      return true;
+    });
+    assert.equal(logs[0].quotaStatus, 'unknown');
+  }
+});
+
+test('keeps HTTP 429 evidence when error bodies are malformed or oversized and honors Retry-After', async () => {
+  for (const payload of ['not JSON', 'x'.repeat(17 * 1024)]) {
+    await assert.rejects(recognizeHandwriting({ code: PNG }, { env, logger: () => {}, fetchImpl: async () =>
+      new Response(payload, { status: 429, headers: { 'Retry-After': '12' } }) }), (error) => {
+      assert.equal(error.status, 429);
+      assert.equal(error.ocrDiagnostic.quotaStatus, 'quota_or_rate_limit_reached');
+      assert.equal(error.ocrDiagnostic.retryAfterSeconds, 12);
+      assert.match(error.message, /Retry after 12 seconds/);
+      return true;
+    });
+  }
 });
 
 test('surfaces provider failures without leaking keys or provider response bodies', async () => {

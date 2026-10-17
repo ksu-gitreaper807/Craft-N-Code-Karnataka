@@ -133,6 +133,8 @@ Six starter lessons demonstrate input/output, a use-after-free error, an empty-s
 
 OCR permits one request in flight and six attempts per minute, with a 4 MiB request-body limit and a 60-second provider deadline. Execution permits two requests in flight and 20 attempts per minute. These limits are process-local and reset when the server restarts.
 
+OCR failures include safe diagnostic metadata in the API response and an expandable UI panel. The backend logs `[ocr:gemini]` records with HTTP status, duration, quota classification, and numeric per-request token usage on success. Provider-reported token limits, generic quota/rate limits, and depleted credits are distinguished; a timeout leaves quota status unknown. Logs omit credentials, images, transcriptions, and raw error payloads. Remaining project quota must be checked in AI Studio.
+
 The server binds to loopback and checks request hosts and origins. The local `.env` contains `GEMINI_API_KEY` and optional `OCR_MODEL`; it is ignored by Git. Keys are never prefixed with `VITE_`, sent to the browser, or mounted into execution containers. `PORT` overrides the API's default port of 8787. A health response indicates that OCR credentials are configured, not that every future provider request will succeed.
 
 ## 9. Storage and repository organization

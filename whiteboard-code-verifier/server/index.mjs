@@ -114,6 +114,7 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
       send(res, error.status ?? (error.code === 'ENOENT' ? 404 : 502), {
         error: error.code === 'ENOENT' ? 'Frontend not built. Run npm run build or use npm run dev.' : error.message,
         ...(error.code?.startsWith('ocr_') || error.code === 'invalid_ocr_response' || error.code === 'invalid_ocr_request' ? { code: error.code } : {}),
+        ...(error.ocrDiagnostic ? { diagnostic: error.ocrDiagnostic } : {}),
       });
     }
   };
