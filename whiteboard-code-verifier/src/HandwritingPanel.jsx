@@ -2,6 +2,7 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } f
 import { captureHandwriting } from './capture.js';
 import { extractProgram } from './board.js';
 import { inkFingerprint, makeReviewDraft, reviewedProgram } from './handwriting.js';
+import { apiFetch } from './api.js';
 
 const HandwritingPanel = forwardRef(function HandwritingPanel({
   api, frameId, fingerprint, configuration, hasInk,
@@ -39,7 +40,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
       const snapshotFingerprint = inkFingerprint(snapshot, frameId);
       const typed = extractProgram(snapshot, frameId);
       const captures = await captureHandwriting(api, snapshot, frameId);
-      const response = await fetch('/api/ocr', {
+      const response = await apiFetch('/api/ocr', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
         body: JSON.stringify(Object.fromEntries(Object.entries(captures).map(([channel, capture]) => [channel, capture.dataUrl]))),
       });
@@ -82,7 +83,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
   return <section className="handwriting-panel" aria-label="Handwriting recognition and review">
     <h3>Read the ink. Check the code.</h3>
     <p className="panel-help">Read sends black and blue ink from this frame to Google Gemini. Review every line before compiling. Other annotation colors stay out of the images.</p>
-    <button className="ocr-read-button" onClick={read} disabled={!api || !hasInk || busy}>{busy ? 'Reading handwriting…' : 'Read handwriting'}</button>
+    <button className="ocr-read-button" onClick={read} disabled={!api || !hasInk || !configuration?.available || busy}>{busy ? 'Reading handwriting…' : 'Read handwriting'}</button>
     {!configuration?.available && <div className="runner-notice">{configuration?.message ?? 'Checking OCR configuration…'}</div>}
     {!hasInk && <p className="panel-help">Choose “New handwritten board”, then write with “Pen: code” or “Pen: input”.</p>}
     {error && <div className="error-notice" role="alert">{error}</div>}

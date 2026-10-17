@@ -4,6 +4,8 @@ An executable whiteboard for teachers explaining C. Handwrite or type code in an
 
 The application is self-contained in `whiteboard-code-verifier/`; hackathon submission materials are maintained separately.
 
+The Vercel build contains the frontend only. To connect verification, Gemini OCR, and snapshots from `https://board-of-c.vercel.app`, follow the [Docker API deployment guide](docs/docker-api-deployment.md). Until that API is configured, the deployed page supports board editing and downloads.
+
 See the [technical stack and project overview](docs/technical-overview.md) for the architecture, implementation details, API, execution limits, and current scope.
 
 ## First working slice
@@ -60,7 +62,7 @@ npm run build
 npm start
 ```
 
-Open **http://127.0.0.1:8787**. `PORT` can change the production API port. Development uses port 8787 for its proxy. The server binds to loopback and rejects foreign hosts/origins; public hosting is not configured.
+Open **http://127.0.0.1:8787**. `PORT` can change the production API port. Development uses port 8787 for its proxy. The server binds to loopback; an HTTPS reverse proxy and the exact origin/token configuration in the [deployment guide](docs/docker-api-deployment.md) connect a trusted hosted frontend.
 
 ### Docker on CachyOS / Arch Linux
 
@@ -182,7 +184,7 @@ The Node API uses only built-in modules. Python's standard library owns compilat
 
 `POST /api/ocr` accepts `{ "code": "data:image/png;base64,...", "stdin": "data:image/png;base64,..." }`; omit a channel when it contains no handwriting. It returns line text, normalized line boxes, ambiguity flags, alternatives, provider/model metadata, and `requiresConfirmation: true`. It never compiles or runs anything. Requests are limited to 4 MiB, PNG dimensions to 2048 × 2048, one recognition at a time, and six attempts per minute. The provider deadline is 60 seconds.
 
-`POST /api/snapshots` accepts `{ "title": "Lesson name", "scene": { ... } }` and returns the dated folder ID and local Git commit. Source and stdin are derived from the scene, with current OCR confirmation required for handwritten channels. Snapshot bodies are limited to 4 MiB and scene data to 2 MB. `GET /api/snapshots` lists recent history; `GET /api/snapshots/<id>` reads a committed scene. These endpoints use the same loopback host/origin restrictions as execution.
+`POST /api/snapshots` accepts `{ "title": "Lesson name", "scene": { ... } }` and returns the dated folder ID and local Git commit. Source and stdin are derived from the scene, with current OCR confirmation required for handwritten channels. Snapshot bodies are limited to 4 MiB and scene data to 2 MB. `GET /api/snapshots` lists recent history; `GET /api/snapshots/<id>` reads a committed scene. Hosted access uses an exact frontend origin and a runtime API token; see the deployment guide.
 
 `GET /api/snapshots/<id>/libraries` returns only allowlisted headers bundled in the committed lesson, alongside current application copies for comparison. It reads historical content from Git rather than mutable snapshot files.
 
@@ -202,7 +204,7 @@ Tests require Python 3.10+ and host GCC with ASan/UBSan. Only fixed repository-o
 
 Browser tests serve the production build on loopback port 8878 and shut down their own server afterward. They exercise source/input editing, case runs, board download/import, a phone viewport, fullscreen, panel resizing, long-program frame growth, curated and historical header browsing, compiler diagnostics, stale results, and all six demo lessons. Handwriting tests explicitly stub the OCR provider to verify pen capture, review gating, and real compilation after confirmation. They do not measure recognition accuracy. The Docker-dependent checks fail if the runner is unavailable. Browser traces and screenshots are written to the ignored `test-results/` directory.
 
-The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, actual leak reports, new library operations, and caller-line contracts. Verification passed 62 Node/Python tests and 27 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Snapshot tests use real temporary Git repositories and cover literal file contents, unique folders, confirmation gating, large stroke scenes, failed commits, and preservation of unrelated staged work. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
+The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, actual leak reports, new library operations, and caller-line contracts. Verification passed 63 Node/Python tests and 29 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Snapshot tests use real temporary Git repositories and cover literal file contents, unique folders, confirmation gating, large stroke scenes, failed commits, and preservation of unrelated staged work. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
 
 ## Data, AI tools, and reused code
 

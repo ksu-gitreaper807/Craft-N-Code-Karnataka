@@ -17,14 +17,15 @@ async function start(t, dependencies = {}) {
     for (const [name, value] of Object.entries(options.headers ?? {})) req.headers[name.toLowerCase()] = value;
     let status = 200;
     let body = '';
+    const headers = {};
     const res = {
       headersSent: false,
-      setHeader() {},
+      setHeader(name, value) { headers[name.toLowerCase()] = value; },
       writeHead(code) { status = code; this.headersSent = true; },
       end(value) { body = value?.toString() ?? ''; },
     };
     await handler(req, res);
-    return { status, json: async () => JSON.parse(body), text: async () => body };
+    return { status, headers, json: async () => JSON.parse(body), text: async () => body };
   };
 }
 
@@ -78,6 +79,26 @@ test('rejects malformed JSON, wrong content type, oversized bodies, and foreign 
   assert.equal((await post(base, { source: 'x'.repeat(66_000) })).status, 413);
   assert.equal((await post(base, { source: 'x' }, { headers: { Origin: 'https://unrelated.example' } })).status, 403);
   assert.equal((await base('/api/health', { headers: { Host: 'unrelated.example' } })).status, 403);
+});
+
+test('hosted API accepts only its frontend origin and a runtime access token', async (t) => {
+  const base = await start(t, { appOrigin: 'https://board-of-c.vercel.app', apiHost: 'api.example.com',
+    apiToken: 'private-test-token', health: async () => ({ available: true }),
+    ocrHealth: () => ({ available: true }) });
+  const hosted = { Host: 'api.example.com', Origin: 'https://board-of-c.vercel.app' };
+  const preflight = await base('/api/health', { method: 'OPTIONS', headers: { ...hosted,
+    'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'Authorization' } });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers['access-control-allow-origin'], hosted.Origin);
+  assert.match(preflight.headers['access-control-allow-headers'], /Authorization/);
+  assert.equal((await base('/api/health', { headers: hosted })).status, 401);
+  assert.equal((await base('/api/health', { headers: { ...hosted, Authorization: 'Bearer wrong' } })).status, 401);
+  const authorized = await base('/api/health', { headers: { ...hosted, Authorization: 'Bearer private-test-token' } });
+  assert.equal(authorized.status, 200);
+  assert.equal(authorized.headers['access-control-allow-origin'], hosted.Origin);
+  assert.equal((await base('/api/health', { headers: { ...hosted, Origin: 'https://untrusted.example', Authorization: 'Bearer private-test-token' } })).status, 403);
+  assert.equal((await base('/api/health', { headers: { ...hosted, Host: 'untrusted.example', Authorization: 'Bearer private-test-token' } })).status, 403);
+  assert.throws(() => createHandler({ appOrigin: hosted.Origin, apiToken: '' }), /BOARDROOM_API_TOKEN/);
 });
 
 test('caps concurrent runs, then releases slots after a failed runner', async (t) => {

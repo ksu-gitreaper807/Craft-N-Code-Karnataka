@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, extname, resolve, sep } from 'node:path';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { sandboxHealth, runSandbox } from './sandbox.mjs';
 import { loadOcrEnvironment, ocrConfiguration, recognizeHandwriting, OCR_BODY_LIMIT } from './ocr.mjs';
 import { libraries } from '../src/libraries.js';
@@ -42,7 +43,11 @@ export function validatePayload(body) {
 }
 
 export function createHandler({ run = runSandbox, health = sandboxHealth, now = Date.now,
-  recognize = recognizeHandwriting, ocrHealth = ocrConfiguration, snapshots = createSnapshotStore() } = {}) {
+  recognize = recognizeHandwriting, ocrHealth = ocrConfiguration, snapshots = createSnapshotStore(),
+  appOrigin = process.env.BOARDROOM_APP_ORIGIN, apiHost = process.env.BOARDROOM_API_HOST,
+  apiToken = process.env.BOARDROOM_API_TOKEN } = {}) {
+  if ((appOrigin || apiHost) && !apiToken) throw new Error('BOARDROOM_API_TOKEN is required when exposing the API to a hosted frontend.');
+  const expectedToken = apiToken ? createHash('sha256').update(apiToken).digest() : null;
   let active = 0;
   let activeOcr = 0;
   let rate = { start: 0, count: 0 };
@@ -51,16 +56,33 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     const port = req.socket.localPort;
-    const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`];
+    const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`, ...(apiHost ? [apiHost] : [])];
     if (!allowedHosts.includes(req.headers.host)) return send(res, 403, { error: 'Use the local server address.' });
-    if (req.headers.origin && ![
+    const allowedOrigins = [
       ...allowedHosts.map((host) => `http://${host}`),
       'http://127.0.0.1:5173', 'http://localhost:5173',
-    ].includes(req.headers.origin)) return send(res, 403, { error: 'This origin cannot access the local runner.' });
+      ...(appOrigin ? [appOrigin.replace(/\/$/, '')] : []),
+    ];
+    if (req.headers.origin && !allowedOrigins.includes(req.headers.origin)) return send(res, 403, { error: 'This origin cannot access the local runner.' });
+    if (req.headers.origin) {
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    }
 
     let pathname;
     try { pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname); }
     catch { return send(res, 400, { error: 'Invalid URL.' }); }
+    if (pathname.startsWith('/api/') && req.method === 'OPTIONS') {
+      res.writeHead(204);
+      return res.end();
+    }
+    if (pathname.startsWith('/api/') && expectedToken) {
+      const presented = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1] ?? '';
+      const digest = createHash('sha256').update(presented).digest();
+      if (!timingSafeEqual(digest, expectedToken)) return send(res, 401, { error: 'A valid Boardroom API token is required.' });
+    }
     try {
       if (pathname === '/api/health' && req.method === 'GET') {
         return send(res, 200, { service: 'whiteboard-code-verifier', runner: await health(), ocr: ocrHealth() });

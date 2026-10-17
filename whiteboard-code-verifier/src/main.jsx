@@ -13,6 +13,7 @@ import FrameControls from './FrameControls.jsx';
 import WorkspaceLayout from './WorkspaceLayout.jsx';
 import SnapshotHistory from './SnapshotHistory.jsx';
 import TestCases from './TestCases.jsx';
+import { apiFetch, hasApiToken, setApiToken } from './api.js';
 import './styles.css';
 
 const labels = {
@@ -56,6 +57,9 @@ function App() {
   const [tab, setTab] = useState('output');
   const [health, setHealth] = useState(null);
   const [ocrHealth, setOcrHealth] = useState(null);
+  const [apiConnected, setApiConnected] = useState(false);
+  const [apiAuthRequired, setApiAuthRequired] = useState(false);
+  const [apiTokenDraft, setApiTokenDraft] = useState('');
   const [reading, setReading] = useState(false);
   const [confirmedOcr, setConfirmedOcr] = useState(null);
   const [running, setRunning] = useState(false);
@@ -90,15 +94,28 @@ function App() {
   const refreshCanvas = useCallback(() => api?.refresh(), [api]);
 
   const checkHealth = useCallback(async () => {
+    let authRequired = false;
     try {
-      const response = await fetch('/api/health');
+      const response = await apiFetch('/api/health');
+      if (response.status === 401) {
+        authRequired = true;
+        throw new Error('The Boardroom API needs an access token.');
+      }
       if (!response.ok) throw new Error('API unavailable');
       const data = await response.json();
+      if (!data || typeof data.runner?.available !== 'boolean' || typeof data.ocr?.available !== 'boolean') throw new Error('Invalid API response');
+      setApiConnected(true);
+      setApiAuthRequired(false);
       setHealth(data.runner);
       setOcrHealth(data.ocr);
     } catch {
-      setHealth({ available: false, message: 'Start the API with npm run dev or npm start.' });
-      setOcrHealth({ available: false, message: 'Start the API to connect handwriting recognition.' });
+      const local = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+      const message = authRequired ? 'The Boardroom API needs a valid access token.' : local ? 'Boardroom API is offline. Start it with npm run dev or npm start.' :
+        'This site has no Boardroom API connection. Board editing and downloads work; verification, handwriting recognition, and snapshots need a hosted Docker-backed API.';
+      setApiAuthRequired(authRequired);
+      setApiConnected(false);
+      setHealth({ available: false, message });
+      setOcrHealth({ available: false, message });
     }
   }, []);
   useEffect(() => { checkHealth(); }, [checkHealth]);
@@ -159,7 +176,7 @@ function App() {
     controller.current = abort;
     const timeout = setTimeout(() => abort.abort(), 30_000);
     try {
-      const response = await fetch('/api/run', {
+      const response = await apiFetch('/api/run', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: submitted.source, stdin: submitted.stdin }), signal: abort.signal,
       });
@@ -225,7 +242,7 @@ function App() {
     }
     setSavingSnapshot(true); setError(''); setNotice('');
     try {
-      const response = await fetch('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const response = await apiFetch('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: selectedFrame?.name || lesson?.title || 'Lesson', scene }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? 'Could not save the lesson snapshot.');
@@ -268,7 +285,7 @@ function App() {
     setLibraryFile(file);
     if (librarySources[file]) return;
     try {
-      const response = await fetch(`/api/library/${file}`);
+      const response = await apiFetch(`/api/library/${file}`);
       if (!response.ok) throw new Error(`Could not load ${file}. Check the API.`);
       const source = await response.text();
       setLibrarySources((previous) => ({ ...previous, [file]: source }));
@@ -313,7 +330,7 @@ function App() {
           <button className="quiet-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={toggleFullscreen}>⛶ <span>{fullscreen ? 'Exit fullscreen' : 'Fullscreen'}</span></button>
           <button className="quiet-button" aria-pressed={!panelVisible} onClick={() => setPanelVisible((visible) => !visible)}>{panelVisible ? 'Hide panel' : 'Show panel'}</button>
           <button className="quiet-button" aria-label="Save lesson snapshot" onClick={saveSnapshot}
-            disabled={!api || !frameId || running || reading || savingSnapshot || !program.source.trim() || (hasInk && !recognizedProgram)}
+            disabled={!api || !apiConnected || !frameId || running || reading || savingSnapshot || !program.source.trim() || (hasInk && !recognizedProgram)}
             title={hasInk && !recognizedProgram ? 'Confirm the handwriting before saving.' : 'Save board, source, and input with local Git history.'}>
             <Icon name="board" /><span>{savingSnapshot ? 'Saving…' : 'Snapshot'}</span></button>
           <button className="quiet-button" onClick={() => upload.current.click()} disabled={!api || running || reading}><Icon name="upload" /> <span>Open board</span></button>
@@ -351,9 +368,10 @@ function App() {
             <label className="field-label" htmlFor="program-frame">PROGRAM FRAME</label>
             <select id="program-frame" className="frame-select" value={frameId} disabled={running || reading} onChange={(event) => setFrameId(event.target.value)}>{!frames.length && <option value="">Create a frame on the board</option>}{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.name || 'Untitled program'}</option>)}</select>
             <p className="lesson-description">{lesson?.description ?? 'Black text in the selected frame becomes your program. Blue text becomes its input.'}</p>
-            <button className="run-button" onClick={run} disabled={running || reading || !api || !frameId || Boolean(pseudoDraft && pseudoDraft.originalSignature === signature)}><span className={running || reading ? 'spinner' : ''}>{!running && !reading && <Icon name="play" size={18} />}</span>{reading ? 'Reading handwriting…' : running ? 'Compiling & running…' : pseudoDraft && pseudoDraft.originalSignature === signature ? 'Review pseudocode draft' : hasInk && !recognizedProgram ? 'Read & review handwriting' : 'Verify & run'}{!running && !reading && <span className="run-button-hint">C →</span>}</button>
+            <button className="run-button" onClick={run} disabled={running || reading || !api || !frameId || !(hasInk && !recognizedProgram ? ocrHealth?.available : health?.available) || Boolean(pseudoDraft && pseudoDraft.originalSignature === signature)}><span className={running || reading ? 'spinner' : ''}>{!running && !reading && <Icon name="play" size={18} />}</span>{reading ? 'Reading handwriting…' : running ? 'Compiling & running…' : pseudoDraft && pseudoDraft.originalSignature === signature ? 'Review pseudocode draft' : hasInk && !recognizedProgram ? 'Read & review handwriting' : 'Verify & run'}{!running && !reading && <span className="run-button-hint">C →</span>}</button>
             {hasInk && <p className="handwriting-state">{recognizedProgram ? 'Handwriting reviewed. Ready to compile.' : 'Handwriting needs recognition and teacher confirmation.'}</p>}
             {health && !health.available && <div className="runner-notice"><span>{health.message}</span><button onClick={checkHealth}>Check again</button></div>}
+            {apiAuthRequired && <div className="api-access"><label className="field-label" htmlFor="api-access-token">API ACCESS TOKEN</label><input id="api-access-token" type="password" autoComplete="off" value={apiTokenDraft} placeholder={hasApiToken() ? 'Replace the current token' : 'Enter the token from your server'} onChange={(event) => setApiTokenDraft(event.target.value)} /><button className="quiet-button" onClick={() => { setApiToken(apiTokenDraft.trim()); setApiTokenDraft(''); checkHealth(); }}>Connect API</button></div>}
             {error && <div className="error-notice" role="alert">{error}</div>}
             {notice && <p className="notice" role="status">{notice}</p>}
             <div className="result-tabs" role="tablist" aria-label="Run details">{[['output', 'Output'], ['handwriting', 'Handwriting'], ['source', 'Source & input'], ['cases', 'Cases'], ['library', 'Libraries'], ['history', 'History']].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => id === 'library' ? viewLibrary() : setTab(id)}>{label}</button>)}</div>
@@ -369,8 +387,9 @@ function App() {
                 }}
               /></div>
               <div hidden={tab !== 'cases'}><TestCases program={program} signature={signature}
-                disabled={running || reading || !api || !frameId || !program.source.trim() || Boolean(pseudoDraft && pseudoDraft.originalSignature === signature)} onBusy={setRunning} /></div>
-              {tab === 'history' && <SnapshotHistory key={snapshotRevision} onOpen={(scene) => {
+                disabled={running || reading || !health?.available || !api || !frameId || !program.source.trim() || Boolean(pseudoDraft && pseudoDraft.originalSignature === signature)} onBusy={setRunning} /></div>
+              {tab === 'history' && !apiConnected && <p className="panel-help">Lesson history needs the Boardroom API. You can still download this board from the top bar.</p>}
+              {tab === 'history' && apiConnected && <SnapshotHistory key={snapshotRevision} onOpen={(scene) => {
                 const ink = restoreBoard(scene);
                 setTab(ink ? 'handwriting' : 'source');
                 setNotice(ink ? 'Saved board opened. Review its handwriting again before running. The confirmed source is also stored in board.c.' : 'Saved board opened. Run it to verify the saved code.');

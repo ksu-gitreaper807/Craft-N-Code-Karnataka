@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiFetch } from './api.js';
 
 const MAX_CASES = 5;
 const emptyCase = (id) => ({ id, name: `Case ${id}`, stdin: '', expectedStatus: 'success', checkOutput: false, expectedOutput: '' });
@@ -36,7 +37,7 @@ export default function TestCases({ program, signature, disabled, onBusy }) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 30_000);
         try {
-          const response = await fetch('/api/run', {
+          const response = await apiFetch('/api/run', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ source: submitted.source, stdin: item.stdin }), signal: controller.signal,
           });
