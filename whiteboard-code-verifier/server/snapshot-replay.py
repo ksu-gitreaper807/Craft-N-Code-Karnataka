@@ -22,7 +22,11 @@ def verify():
             raise ValueError(f"Snapshot symlinks are not supported: {name}")
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             raise ValueError(f"Snapshot integrity check failed: {name}")
-    for name in ["board.c", "input.txt", "runner.py", "Dockerfile", "build.sh", "replay.py"]:
+    language = manifest.get("language", "c")
+    if language not in ("c", "python"):
+        raise ValueError("Unsupported snapshot language.")
+    source_file = "board.py" if language == "python" else "board.c"
+    for name in [source_file, "input.txt", "runner.py", "Dockerfile", "build.sh", "replay.py"]:
         if name not in manifest["files"]:
             raise ValueError(f"Manifest is missing {name}.")
     headers = set((ROOT / "lib").glob("*.h")) if (ROOT / "lib").exists() else set()
@@ -32,7 +36,7 @@ def verify():
 
 
 def main():
-    verify()
+    manifest = verify()
     if sys.argv[1:] == ["--verify"]:
         print("Snapshot integrity verified.")
         return
@@ -41,7 +45,9 @@ def main():
     name = "boardroom-replay-" + uuid.uuid4().hex
     image = "boardroom-snapshot:" + hashlib.sha256((ROOT / "lib.lock").read_bytes()).hexdigest()[:24]
     subprocess.run(["docker", "build", "--network=none", "-t", image, "."], cwd=ROOT, stdout=sys.stderr, check=True, timeout=180)
-    payload = json.dumps({"source": (ROOT / "board.c").read_bytes().decode("utf-8"),
+    language = manifest.get("language", "c")
+    source_file = "board.py" if language == "python" else "board.c"
+    payload = json.dumps({"language": language, "source": (ROOT / source_file).read_bytes().decode("utf-8"),
                           "stdin": (ROOT / "input.txt").read_bytes().decode("utf-8")}, ensure_ascii=False)
     try:
         result = subprocess.run([

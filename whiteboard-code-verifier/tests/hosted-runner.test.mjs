@@ -59,3 +59,36 @@ test('hosted runner surfaces compiler rate limits without claiming a run complet
     env, readHeader, fetchImpl: async () => new Response('', { status: 429 }),
   }), { status: 429 });
 });
+
+test('hosted Python uses its runtime without C headers or flags and preserves stdin', async () => {
+  let payload;
+  const result = await runHostedProgram({ source: 'print(input())\n', stdin: 'hello\n', language: 'python' }, {
+    env, readHeader: async () => { throw new Error('Python must not read C headers'); },
+    fetchImpl: async (_url, options) => {
+      payload = JSON.parse(options.body);
+      return new Response(JSON.stringify({ status: '0', compiler_output: '', compiler_error: '', program_output: 'hello\n', program_error: '' }));
+    },
+  });
+  assert.equal(payload.compiler, 'cpython-3.13.8');
+  assert.deepEqual(payload.codes, []);
+  assert.equal(payload['compiler-option-raw'], undefined);
+  assert.equal(payload.stdin, 'hello\n');
+  assert.equal(result.language, 'python');
+  assert.equal(result.stdout, 'hello\n');
+});
+
+test('hosted Python classifies syntax errors and maps runtime tracebacks', async () => {
+  for (const [message, status] of [['SyntaxError: expected colon', 'compile_error'], ['ZeroDivisionError: division by zero', 'runtime_error']]) {
+    const result = await runHostedProgram({ source: 'broken', language: 'python' }, { env,
+      fetchImpl: async () => new Response(JSON.stringify({ status: '1', compiler_output: '', compiler_error: '', program_output: '',
+        program_error: `Traceback (most recent call last):\n  File "prog.py", line 3, in <module>\n${message}\n` })),
+    });
+    assert.equal(result.status, status);
+    assert.equal(result.diagnostics[0].line, 3);
+    assert.equal(result.diagnostics[0].message, message);
+  }
+  const ready = await hostedRunnerHealth({ env, language: 'python', fetchImpl: async () => new Response(JSON.stringify([{ name: 'cpython-3.13.8' }])) });
+  assert.equal(ready.available, true);
+  const wrong = await hostedRunnerHealth({ env, language: 'python', fetchImpl: async () => new Response(JSON.stringify([{ name: 'gcc-head-c' }])) });
+  assert.equal(wrong.available, false);
+});

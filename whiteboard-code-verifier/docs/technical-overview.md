@@ -4,7 +4,7 @@ This document describes the implementation currently in `whiteboard-code-verifie
 
 ## 1. Purpose and target user
 
-Boardroom is an executable digital whiteboard for teachers explaining C programming. A teacher writes or types on a blank canvas, selects a code/input region from the top bar, supplies input in blue, and runs the program without moving the lesson into a separate IDE. Compiler messages and runtime diagnostics point back to locations on the board.
+Boardroom is an executable digital whiteboard for teachers explaining C and Python programming. A teacher writes or types on a blank canvas, selects a code/input region from the top bar, supplies input in blue, and runs the program without moving the lesson into a separate IDE. Compiler messages and runtime diagnostics point back to locations on the board.
 
 The teaching goal is to make classroom examples verifiable: demonstrate working code, expose syntax and memory mistakes, and connect abstractions to their implementation. The current input is an Excalidraw canvas. A camera pipeline for physical whiteboards is outside the implemented scope.
 
@@ -22,13 +22,13 @@ The teaching goal is to make classroom examples verifiable: demonstrate working 
 | Execution boundary | Linux Docker Engine locally; configured Wandbox service on Vercel | Isolated C execution outside the application process |
 | Compiler image | `gcc:14.2.0-bookworm` | GCC toolchain and Debian-based execution environment |
 | Runner implementation | Python 3 standard library | Compilation, input delivery, deadlines, output collection, and diagnostic parsing |
-| Program language | C11 | Full programs compiled with warnings and runtime sanitizers |
+| Program languages | C11 and Python 3 | C uses GCC/sanitizers; Python uses isolated syntax checking and interpretation |
 | Runtime checks | AddressSanitizer, UndefinedBehaviorSanitizer, and leak detection | Detect supported memory errors, undefined behavior, and leaks during execution |
 | Tests | Node's test runner, Python `unittest`, Playwright 1.64.1 | Unit, compiler, container, and browser checks |
 
 Frontend dependencies are pinned in `package.json` and `package-lock.json`. The Dockerfile pins a compiler image tag, rather than an immutable image digest. Node's API and the Python runner use built-in modules; there is no Express server or Gemini SDK dependency. The backend calls Gemini through `fetch` and its REST API.
 
-The Vercel deployment also includes same-origin Functions for health, OCR, Gemini pseudocode assistance, and C execution. They require a teacher access token. Vercel has no persistent Docker or Git archive, so its C compiler is an explicitly configured third-party Wandbox service and its Snapshot/History actions are unavailable. See [Vercel serverless deployment](vercel-serverless.md). The Docker implementation below remains the full local/persistent-server mode; its sanitizers and resource limits do not describe the hosted compiler.
+The Vercel deployment also includes same-origin Functions for health, OCR, Gemini pseudocode assistance, and C/Python execution. They require a teacher access token. Vercel has no persistent Docker or Git archive, so its C compiler is an explicitly configured third-party Wandbox service and its Snapshot/History actions are unavailable. See [Vercel serverless deployment](vercel-serverless.md). The Docker implementation below remains the full local/persistent-server mode; its sanitizers and resource limits do not describe the hosted compiler.
 
 ## 3. Architecture and data flow
 
@@ -63,6 +63,12 @@ The workspace fills the browser viewport beneath compact controls. Browser fulls
 For typed text, `src/board.js` orders text elements by position and preserves their text, including blank lines. It also constructs a source map from compiler line numbers to text-element coordinates. Typed-only channels bypass OCR entirely.
 
 For handwritten channels, `src/capture.js` exports the relevant strokes and any text in that same channel. Code and stdin are captured separately, with padding and a white background. Frame borders and verifier overlays are excluded. Exported images are scaled to a maximum dimension of 1,800 pixels; the API accepts PNGs up to 2,048 × 2,048.
+
+### Language selection
+
+The right panel's C/Python radio toggle sets a fixed `c` or `python` value. `src/languages.js` shares supported IDs, source filenames and payload defaults. Omitted language fields retain C behavior. Signatures include Python mode so old C results and pending proposals cannot be reused across language changes. Changing the language clears handwriting confirmation, and saved scenes restore their language; legacy scenes default to C.
+
+The API forwards Python requests to the same isolated Docker runner locally and to Wandbox's configured Python runtime on Vercel. Python syntax checking preserves original line numbers; exception tracebacks map back to board lines. Python uses the same input, output, time, network and container limits as C, with no C header validation or sanitizer claims. Gemini receives Python-specific transcription and assistance instructions at every level. Python snapshots store `board.py` and a language-tagged manifest; replay passes that language to the frozen runner. Existing C snapshots and manifests remain supported.
 
 ### Gemini pseudocode levels
 
@@ -154,7 +160,7 @@ The server binds to loopback and checks request hosts and origins. A trusted hos
 
 ## 9. Storage and repository organization
 
-There is no application database, user-account system, or cloud lesson store. The working board is held in browser application state. Teachers can download its Excalidraw-compatible scene or use **Snapshot** to save `board.excalidraw`, `board.c`, and `input.txt` on the API server. Snapshot folders are grouped by UTC date, with a time/title/unique suffix for each save. Source and input are derived from the selected frame; handwritten source requires a matching confirmed transcription. Saving does not require successful compilation or a working Docker runner.
+There is no application database, user-account system, or cloud lesson store. The working board is held in browser application state. Teachers can download its Excalidraw-compatible scene or use **Snapshot** to save `board.excalidraw`, `board.c` or `board.py`, and `input.txt` on the API server. Snapshot folders are grouped by UTC date, with a time/title/unique suffix for each save. Source and input are derived from the selected frame; handwritten source requires a matching confirmed transcription. Saving does not require successful compilation or a working Docker runner.
 
 The archive is a separate local Git repository under `snapshots/`, initialized on first save. Each snapshot creates one commit containing its board files and replay bundle. **History** lists the latest 30 commits and opens their saved scenes. Opening restores the selected frame but requires fresh execution and, for handwriting, review. Git failures preserve the saved files and produce a visible warning. `SNAPSHOT_DIR` can relocate the archive. New snapshots vendor referenced curated headers and their trusted internal dependencies into `lib/`, freeze `runner.py` (including compilation flags), and save a `lib.lock` manifest with SHA-256 file hashes and an immutable GCC image reference. `build.sh` invokes the standard-library `replay.py` to check integrity before a Docker build and constrained run. No submitted program executes on the host; replay uses no host mounts and disables container networking. The image must be available locally or downloadable for the first build. A copied snapshot can replay without the application checkout.
 
@@ -196,6 +202,6 @@ Development serves the frontend at `http://127.0.0.1:5173` and the API at `http:
 | `npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png` | Opt-in live Gemini request; prints unconfirmed text without executing it |
 | `npm run benchmark:ocr -- /path/to/private/manifest.json` | Opt-in live Gemini measurements against private classroom samples |
 
-Implementation verification passed 73 Node/Python tests and 38 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public and committed header browsing, multiple input cases, all six examples, and saving/reopening real Git-backed snapshots. Snapshot failure cases preserve written files and unrelated staged application changes. The browser suite stubs OCR and Gemini code assistance explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
+Implementation verification passed 84 Node/Python tests and 43 browser tests; the Docker runner also passes its dedicated execution checks. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public and committed header browsing, multiple input cases, all six examples, and saving/reopening real Git-backed snapshots. Snapshot failure cases preserve written files and unrelated staged application changes. The browser suite stubs OCR and Gemini code assistance explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
 
 These results establish the working integration. The new benchmark command computes character, line, and critical-symbol errors from private sample images and gold transcriptions, plus optional teacher-reported correction time; no genuine classroom samples have been provided or measured. Other material limits are restricted includes, approximate handwriting highlights, unbenchmarked Gemini code-generation quality, browser-session-only input cases, no collaboration or individual authentication, and no public multi-tenant deployment. Caveman gateway observability is not connected in the current implementation.

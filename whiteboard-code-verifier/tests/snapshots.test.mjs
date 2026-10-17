@@ -247,3 +247,21 @@ test('a lesson saved during an in-flight push is sent afterward', async (t) => {
   assert.equal((await store.syncStatus()).state, 'synced');
   assert.equal(await git(remote, 'rev-parse', 'refs/heads/boardroom-lessons'), second.commit);
 });
+
+test('Python snapshots preserve language, save board.py and verify portable replay metadata', async (t) => {
+  const { root, store } = await archive(t);
+  const board = scene();
+  board.verifier.language = 'python';
+  board.elements.find((el) => el.id === 'code').text = '#include <queue.h>\nfrom collections import deque\n\nprint(sum(deque(map(int, input().split()))))\n';
+  const saved = await store.save({ title: 'Python lesson', scene: board });
+  const files = await readdir(join(root, saved.id));
+  assert.ok(files.includes('board.py'));
+  assert.ok(!files.includes('board.c'));
+  assert.ok(!files.includes('lib'));
+  const manifest = JSON.parse(await readFile(join(root, saved.id, 'lib.lock'), 'utf8'));
+  assert.equal(manifest.language, 'python');
+  assert.ok(manifest.files['board.py']);
+  assert.equal((await store.read(saved.id)).verifier.language, 'python');
+  const verified = await execute('bash', ['build.sh', '--verify'], { cwd: join(root, saved.id), timeout: 5000 });
+  assert.match(verified.stdout, /integrity verified/);
+});

@@ -230,3 +230,15 @@ test('snapshot API saves and reads history independently of code execution', asy
   assert.equal((await base('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'x'.repeat(4 * 1024 * 1024 + 1) })).status, 413);
   assert.equal(runs, 0);
 });
+
+test('Python API passes the selected language through readiness and execution, and rejects unknown languages', async (t) => {
+  let received, selected;
+  const base = await start(t, { health: async (language) => { selected = language; return { available: true }; },
+    run: async (payload) => { received = payload; return { status: 'success', stdout: '5\n' }; } });
+  assert.equal((await base('/api/health?language=python')).status, 200);
+  assert.equal(selected, 'python');
+  assert.equal((await post(base, { source: 'print(5)\n', stdin: '', language: 'python' })).status, 200);
+  assert.deepEqual(received, { source: 'print(5)\n', stdin: '', language: 'python' });
+  assert.equal((await post(base, { source: 'x', language: 'javascript' })).status, 400);
+  assert.equal((await base('/api/health?language=javascript')).status, 400);
+});

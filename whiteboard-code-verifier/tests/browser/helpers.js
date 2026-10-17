@@ -1,5 +1,5 @@
 // Builds a small Excalidraw file so a test can place exact text on the board.
-export function boardFile({ code, stdin, notes = [] }) {
+export function boardFile({ code, stdin, notes = [], language }) {
   const text = (id, value, x, y, strokeColor) => ({
     id, type: 'text', frameId: 'frame', x, y, width: 420, height: 20 * value.split('\n').length,
     fontSize: 16, fontFamily: 3, strokeColor, text: value, lineHeight: 1.25,
@@ -12,7 +12,7 @@ export function boardFile({ code, stdin, notes = [] }) {
   ];
   return {
     name: 'board.excalidraw', mimeType: 'application/json',
-    buffer: Buffer.from(JSON.stringify({ type: 'excalidraw', version: 2, source: 'test', elements, files: {}, verifier: { frameId: 'frame' } })),
+    buffer: Buffer.from(JSON.stringify({ type: 'excalidraw', version: 2, source: 'test', elements, files: {}, verifier: { frameId: 'frame', ...(language ? { language } : {}) } })),
   };
 }
 

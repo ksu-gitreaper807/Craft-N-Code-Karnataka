@@ -81,3 +81,21 @@ test('reports quota evidence and timeouts without leaking private provider messa
   } }), (error) => error.status === 504 && error.diagnostic.quotaStatus === 'unknown');
   assert.ok(!JSON.stringify(logs).includes(env.GEMINI_API_KEY));
 });
+
+test('Python assistance targets Python at each level and never reads C headers', async () => {
+  for (const level of [1, 2, 3]) {
+    let prompt;
+    const result = await assistPseudocode({ level, source: 'print five', language: 'python' }, {
+      env, logger: () => {}, readHeader: async () => { throw new Error('No C headers for Python'); },
+      fetchImpl: async (_url, options) => { prompt = JSON.parse(options.body).system_instruction;
+        return reply({ source: 'print(5)\n', explanation: 'Completed Python.', issues: [] }); },
+    });
+    assert.match(prompt, /demonstrating Python 3/);
+    assert.match(prompt, /standard library only/);
+    assert.ok(!prompt.includes('source must be complete C'));
+    assert.ok(!prompt.includes('Use only these standard headers'));
+    assert.equal(result.language, 'python');
+    assert.equal(result.source, 'print(5)\n');
+  }
+  assert.throws(() => validatePseudocode({ source: 'x', level: 1, language: 'javascript' }), /C or Python/);
+});

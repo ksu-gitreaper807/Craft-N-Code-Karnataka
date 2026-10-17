@@ -1,4 +1,4 @@
-"""Only fixed, trusted C fixtures run on the test host; app requests require Docker."""
+"""Only fixed, trusted C/Python fixtures run on the test host; app requests require Docker."""
 
 import importlib.util
 from pathlib import Path
@@ -108,3 +108,45 @@ class CompilerTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PythonTests(unittest.TestCase):
+    def run_python(self, source, stdin=""):
+        return execute_fixture({"source": source, "stdin": stdin, "language": "python"})
+
+    def test_python_input_blank_lines_and_standard_library(self):
+        source = 'from collections import deque\n\na, b = map(int, input().split())\nq = deque([a, b])\nprint(sum(q))\n'
+        result = self.run_python(source, '3 5\n\n')
+        self.assertEqual(result['status'], 'success', result)
+        self.assertEqual(result['stdout'], '8\n')
+        self.assertEqual(result['notes'], [])
+
+    def test_python_syntax_and_indentation_errors_keep_board_line_numbers(self):
+        for source in ['\n\nif True\n    print(1)\n', '\nif True:\nprint(1)\n']:
+            with self.subTest(source=source):
+                result = self.run_python(source)
+                self.assertEqual(result['status'], 'compile_error', result)
+                self.assertEqual(result['diagnostics'][0]['line'], 3)
+                self.assertEqual(result['diagnostics'][0]['kind'], 'compiler')
+                self.assertEqual(result['stdout'], '')
+
+    def test_python_tracebacks_and_eof_are_real(self):
+        result = self.run_python('def divide():\n    return 1 / 0\n\ndivide()\n')
+        self.assertEqual(result['status'], 'runtime_error', result)
+        self.assertEqual({d['line'] for d in result['diagnostics']}, {2, 4})
+        self.assertIn('ZeroDivisionError', result['diagnostics'][0]['message'])
+        eof = self.run_python('input()\n')
+        self.assertEqual(eof['status'], 'runtime_error', eof)
+        self.assertIn('EOFError', eof['stderr'])
+
+    def test_python_time_and_output_limits(self):
+        timed = self.run_python('while True:\n    pass\n')
+        self.assertEqual(timed['status'], 'timeout', timed)
+        output = self.run_python('print("x" * 40000)\n')
+        self.assertEqual(output['status'], 'output_limit', output)
+        self.assertLessEqual(len(output['stdout']), 16384)
+
+    def test_unknown_language_is_rejected(self):
+        result = execute_fixture({'source': 'print(1)', 'language': 'javascript'})
+        self.assertEqual(result['status'], 'invalid_source')
+        self.assertIn('C or Python', result['stderr'])

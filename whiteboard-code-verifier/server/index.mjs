@@ -8,6 +8,7 @@ import { loadOcrEnvironment, ocrConfiguration, recognizeHandwriting, OCR_BODY_LI
 import { libraries } from '../src/libraries.js';
 import { createSnapshotStore, SNAPSHOT_BODY_LIMIT } from './snapshots.mjs';
 import { assistPseudocode, PSEUDOCODE_BODY_LIMIT } from './pseudocode.mjs';
+import { validLanguage, languagePayload } from '../src/languages.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = resolve(ROOT, 'dist');
@@ -35,7 +36,8 @@ async function requestBody(req, limit = 65_536) {
 }
 
 export function validatePayload(body) {
-  if (!body || typeof body.source !== 'string' || !body.source.trim()) return 'Write some C code before running.';
+  if (!validLanguage(body?.language)) return 'Choose C or Python.';
+  if (!body || typeof body.source !== 'string' || !body.source.trim()) return 'Write some code before running.';
   if (Buffer.byteLength(body.source) > 32_768 || body.source.includes('\0')) return 'Source must be at most 32 KiB without NUL characters.';
   if (body.stdin !== undefined && (typeof body.stdin !== 'string' || Buffer.byteLength(body.stdin) > 8192 || body.stdin.includes('\0'))) {
     return 'Input must be text of at most 8 KiB without NUL characters.';
@@ -86,7 +88,9 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
     }
     try {
       if (pathname === '/api/health' && req.method === 'GET') {
-        return send(res, 200, { service: 'whiteboard-code-verifier', runner: await health(), ocr: ocrHealth() });
+        const language = new URL(req.url, 'http://localhost').searchParams.get('language') ?? 'c';
+        if (!validLanguage(language)) return send(res, 400, { error: 'Choose C or Python.' });
+        return send(res, 200, { service: 'whiteboard-code-verifier', runner: await health(language), ocr: ocrHealth() });
       }
       if (pathname === '/api/snapshots/sync' && req.method === 'GET') return send(res, 200, await snapshots.syncStatus());
       if (pathname === '/api/snapshots/sync' && req.method === 'POST') {
@@ -134,9 +138,9 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
           const body = await requestBody(req);
           const invalid = validatePayload(body);
           if (invalid) return send(res, 400, { error: invalid });
-          const state = await health();
+          const state = await health(body.language ?? 'c');
           if (!state.available) return send(res, 503, { error: state.message, code: 'runner_unavailable' });
-          return send(res, 200, await run({ source: body.source, stdin: body.stdin ?? '' }));
+          return send(res, 200, await run({ source: body.source, stdin: body.stdin ?? '', ...languagePayload(body.language) }));
         } finally { active -= 1; }
       }
       if (pathname.startsWith('/api/')) return send(res, 404, { error: 'API endpoint not found.' });

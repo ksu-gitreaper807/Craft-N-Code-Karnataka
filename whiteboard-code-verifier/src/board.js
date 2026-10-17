@@ -41,7 +41,8 @@ export function extractProgram(elements, frameId) {
 
 export function programSignature(program, frameId) {
   // Include geometry so results from a moved/edited board cannot draw stale highlights.
-  return JSON.stringify([frameId, program.source, program.stdin, program.lineMap]);
+  return JSON.stringify([frameId, program.source, program.stdin, program.lineMap,
+    ...(program.language === 'python' ? ['python'] : [])]);
 }
 
 export function diagnosticBoxes(diagnostics, lineMap) {

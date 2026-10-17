@@ -9,6 +9,7 @@ import { handwritingChannels, inkFingerprint } from '../src/handwriting.js';
 import { snapshotBundle } from './snapshot-bundle.mjs';
 import { createSnapshotSync } from './snapshot-sync.mjs';
 import { libraries } from '../src/libraries.js';
+import { validLanguage, languageInfo } from '../src/languages.js';
 
 const execute = promisify(execFile);
 const APP = fileURLToPath(new URL('../', import.meta.url));
@@ -26,12 +27,14 @@ function snapshotProgram(scene) {
     (el.type !== 'text' || (typeof el.text === 'string' && Number.isFinite(el.fontSize) && el.fontSize > 0)));
   if (!validElements || new Set(scene.elements.map((el) => el.id)).size !== scene.elements.length) throw invalid('The board contains invalid elements.');
   const frameId = scene.verifier?.frameId;
+  if (!validLanguage(scene.verifier?.language)) throw invalid('Choose C or Python.');
+  const language = scene.verifier?.language ?? 'c';
   if (!scene.elements.some((el) => el.id === frameId && el.type === 'frame' && !el.isDeleted)) throw invalid('Select a program frame before saving a snapshot.');
   const channels = handwritingChannels(scene.elements, frameId);
   let program;
   if (channels.code || channels.stdin) {
     const ocr = scene.verifier.ocr;
-    if (!ocr || ocr.frameId !== frameId || ocr.fingerprint !== inkFingerprint(scene.elements, frameId) ||
+    if (!ocr || (ocr.language ?? 'c') !== language || ocr.frameId !== frameId || ocr.fingerprint !== inkFingerprint(scene.elements, frameId) ||
         typeof ocr.confirmedAt !== 'string' || !Number.isFinite(Date.parse(ocr.confirmedAt)) ||
         !Array.isArray(ocr.reviewed?.code) || !Array.isArray(ocr.reviewed?.stdin) ||
         ![...ocr.reviewed.code, ...ocr.reviewed.stdin].every((line) => typeof line === 'string') ||
@@ -44,7 +47,7 @@ function snapshotProgram(scene) {
       typeof program.stdin !== 'string' || program.stdin.includes('\0') || Buffer.byteLength(program.stdin) > 8192) {
     throw invalid('Snapshot source must be nonempty and at most 32 KiB; input must be at most 8 KiB, without NUL characters.');
   }
-  return program;
+  return { ...program, language };
 }
 
 export function createSnapshotStore({ root = resolve(APP, process.env.SNAPSHOT_DIR || 'snapshots'), now = () => new Date() } = {}) {
@@ -79,12 +82,12 @@ export function createSnapshotStore({ root = resolve(APP, process.env.SNAPSHOT_D
         const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'lesson';
         const id = `${day}/${createdAt.slice(11, 19).replaceAll(':', '-')}-${slug}-${randomUUID().slice(0, 8)}`;
         const savedScene = { ...scene, elements: scene.elements.filter((el) => !isOverlay(el)),
-          verifier: { ...scene.verifier, snapshot: { title, createdAt } } };
+          verifier: { ...scene.verifier, language: program.language, snapshot: { title, createdAt } } };
         // Compact JSON keeps large stroke arrays within the board import limit.
         const serialized = JSON.stringify(savedScene) + '\n';
         if (Buffer.byteLength(serialized) > 2_000_000) throw invalid('The saved scene exceeds the 2 MB board import limit.');
         const bundle = await snapshotBundle(savedScene, program);
-        const files = new Map([['board.excalidraw', serialized], ['board.c', program.source], ['input.txt', program.stdin], ...bundle.files]);
+        const files = new Map([['board.excalidraw', serialized], [languageInfo(program.language).file, program.source], ['input.txt', program.stdin], ...bundle.files]);
         files.set('lib.lock', bundle.manifest(files));
         const parent = join(root, day);
         await mkdir(parent, { recursive: true, mode: 0o700 });
