@@ -73,6 +73,22 @@ docker info
 
 The socket ACL grants only your current user daemon access and lasts until the socket is recreated, such as on a Docker restart. Docker daemon access is root-equivalent. For persistent user access, follow the [ArchWiki Docker setup](https://wiki.archlinux.org/title/Docker). The application itself runs as your normal user. Starting the service does not enable it at boot.
 
+## Pseudocode mode
+
+Open **Source & input** for a typed board and choose a correction level. **Prepare pseudocode** creates an editable C proposal without changing the board or running the program. Review the proposal and its warnings, then select **Use prepared code** to replace the selected frame's black text. **Verify & run** compiles only after that explicit step. Save or download the original board first if you want to keep the shorthand.
+
+| Level | What it proposes |
+| --- | --- |
+| 1 · Finish statements | Add missing semicolons to obvious C declarations, assignments, calls, and returns. It warns when there is no `main`. |
+| 2 · Make a program | Includes Level 1, wraps a snippet in `int main(void)`, and adds `<stdio.h>` for supported input/output calls. |
+| 3 · Translate shorthand | Includes Levels 1–2, plus `let`/`set`, `print`, integer `read`/`input`, `if … then`/`otherwise`/`end if`, `while … do`/`end while`, `repeat … times`/`end repeat`, and declared-variable `increment`/`decrement`. |
+
+Level 3 assumes integer values for general `print` and `read` statements and flags those assumptions. Lines it cannot translate remain in the proposal with a warning; incomplete pseudocode needs teacher editing. This mode currently applies to typed text, including text drawn on the canvas. Handwritten code keeps its separate OCR confirmation flow. Gemini is not required for pseudocode mode.
+
+## Multiple input cases
+
+Open **Cases** to add up to five named inputs for the selected board program. Each case can expect success, a compiler error, a runtime issue, a timeout, or an output limit; optionally compare stdout exactly. **Run cases** compiles/runs each input in its own Docker container and marks mismatches. Changing the board marks earlier case results stale. Case definitions live in the current browser session and do not alter the blue input or become part of a lesson snapshot.
+
 ## Try a lesson
 
 1. Run **Input & output**: blue text `3 5` produces `3 + 5 = 8`.
@@ -95,7 +111,7 @@ snapshots/                         # separate local Git repository, created on f
       input.txt
 ```
 
-Every click creates a new folder; existing snapshots are not overwritten. `board.excalidraw` retains the full canvas and selected-frame metadata. `board.c` contains the selected frame's exact typed or confirmed source, and `input.txt` preserves literal input, including blank lines. The three files are recorded together with a `board: <lesson title>` Git commit. This archive is separate from the application repository and has no remote configured automatically.
+Every click creates a new folder; existing snapshots are not overwritten. `board.excalidraw` retains the full canvas and selected-frame metadata. `board.c` contains the selected frame's exact typed or confirmed source, and `input.txt` preserves literal input, including blank lines. All snapshot files are recorded together with a `board: <lesson title>` Git commit. This archive is separate from the application repository and has no remote configured automatically.
 
 The **History** tab lists the latest 30 snapshot commits. **Open saved board** restores the committed scene; save current work first because opening replaces the canvas. Saved execution results are not trusted on opening, and handwritten code requires fresh review before running or snapshotting again. The previously confirmed source remains available in the snapshot's `board.c`.
 
@@ -106,9 +122,44 @@ git -C snapshots log --oneline
 git -C snapshots show --stat HEAD
 ```
 
-Set `SNAPSHOT_DIR` to change the archive location, then restart the API; relative paths resolve from the application directory. The default `snapshots/` directory is ignored by the application repository. Lesson history stays local; pushing it requires configuring a remote separately. If a Git commit fails, the files remain saved and the UI reports the failure. Once Git is available, commit that folder manually from the archive directory with `git add -- <dated-folder>` and `git commit --only -m "board: Recovered lesson" -- <dated-folder>`.
+Set `SNAPSHOT_DIR` to change the archive location, then restart the API; relative paths resolve from the application directory. The default `snapshots/` directory is ignored by the application repository. If a Git commit fails, the files remain saved and the UI reports the failure. Once Git is available, commit that folder manually from the archive directory with `git add -- <dated-folder>` and `git commit --only -m "board: Recovered lesson" -- <dated-folder>`.
 
-This basic format uses the current runner and library headers when rerun. It does not vendor libraries, pin toolchains, or include a build script.
+### Synchronize lesson history
+
+The local commit completes before any network push. To enable backup, create a **private, empty** Git repository for lessons, save one snapshot locally, then add it as the archive's `origin`:
+
+```bash
+git -C snapshots remote add origin https://github.com/<owner>/<private-lessons-repo>.git
+```
+
+The app pushes `HEAD` to the remote's `boardroom-lessons` branch. It never uses the application repository's remote and never force pushes. History shows whether commits are local only, queued, syncing, synced, or blocked by an error. A failed push leaves all local commits available; the API retries on startup, after new saves, and every minute while running. **Retry sync** starts another attempt immediately. No token is stored in snapshots or in the app; Git uses the host's existing authentication. If the remote has competing commits, the push is rejected until you resolve the histories in Git. Keep the remote private if lessons contain student or classroom information.
+
+New snapshots also contain a portable replay bundle:
+
+```text
+lib/             # referenced curated headers plus their internal dependencies
+lib.lock         # SHA-256 hashes of all bundle files and immutable compiler-image reference
+runner.py        # frozen compiler flags, validation, diagnostics, and execution limits
+Dockerfile       # pinned GCC image; unprivileged runner
+.dockerignore    # restricts the image build context
+build.sh         # integrity check followed by Docker-only replay
+replay.py        # standard-library replay driver
+ocr.json         # only when confirmed OCR is present
+result.json      # only for a result matching the saved source/input and geometry
+```
+
+Replay a saved folder independently of the application checkout (requires Bash, Python 3.10+, and Linux Docker):
+
+```bash
+bash /path/to/snapshot/build.sh --verify
+bash /path/to/snapshot/build.sh
+```
+
+Replay verifies the manifest before building or running, then prints a fresh JSON result. Submitted C executes only in a disposable container with the application's network, privilege, memory, process, and timeout limits. It never runs on the host or mounts the snapshot into the container. The first build needs access to the pinned compiler image; later builds can reuse its local cache. The image is pinned, but kernel/platform differences and sanitizer address randomization still affect results.
+
+Headers are collected conservatively from literal includes, including inactive conditional branches, and trusted internal dependencies. Comments and line continuations are handled; saving incomplete C still works without GCC, Docker, or Gemini. Standard headers come from the pinned compiler image. Hashes detect accidental changes relative to `lib.lock`; they are not a signature authenticating files from another person. Inspect an unfamiliar bundle's scripts before executing them. Historical `result.json` is browser-reported evidence, never a fresh verification.
+
+Opening a snapshot in **History** still restores the board for editing and runs against the application's current runner and headers. **Compare saved libraries** displays the committed headers beside the current versions and marks differences. Use the saved `build.sh` for frozen replay. Old three-file snapshots remain readable, but have no bundled headers to compare. Library semver management remains future work.
 
 ## Architecture
 
@@ -133,6 +184,8 @@ The Node API uses only built-in modules. Python's standard library owns compilat
 
 `POST /api/snapshots` accepts `{ "title": "Lesson name", "scene": { ... } }` and returns the dated folder ID and local Git commit. Source and stdin are derived from the scene, with current OCR confirmation required for handwritten channels. Snapshot bodies are limited to 4 MiB and scene data to 2 MB. `GET /api/snapshots` lists recent history; `GET /api/snapshots/<id>` reads a committed scene. These endpoints use the same loopback host/origin restrictions as execution.
 
+`GET /api/snapshots/<id>/libraries` returns only allowlisted headers bundled in the committed lesson, alongside current application copies for comparison. It reads historical content from Git rather than mutable snapshot files.
+
 ## Verification
 
 ```bash
@@ -142,27 +195,30 @@ npx playwright install chromium # once, for browser checks
 npm run build                 # frontend production build
 npm run test:browser           # desktop/mobile UI, import/export, real Docker runs
 npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png # opt-in live Gemini request
+npm run benchmark:ocr -- /path/to/private/manifest.json # opt-in classroom handwriting benchmark
 ```
 
 Tests require Python 3.10+ and host GCC with ASan/UBSan. Only fixed repository-owned C fixtures execute directly on the test host. Host tests disable leak tracing for those fixtures; a separate LSan test runs when tracing is supported and reports a skip otherwise. Production always enables leak detection. API tests exercise the actual request handler with Node streams and injected runner responses; Docker smoke tests verify the deployment boundary separately.
 
-Browser tests serve the production build on loopback port 8878 and shut down their own server afterward. They exercise source/input editing, board download/import, a phone viewport, fullscreen, panel resizing, long-program frame growth, curated-header browsing, compiler diagnostics, stale results, and all six demo lessons. Handwriting tests explicitly stub the OCR provider to verify pen capture, review gating, and real compilation after confirmation. They do not measure recognition accuracy. The Docker-dependent checks fail if the runner is unavailable. Browser traces and screenshots are written to the ignored `test-results/` directory.
+Browser tests serve the production build on loopback port 8878 and shut down their own server afterward. They exercise source/input editing, case runs, board download/import, a phone viewport, fullscreen, panel resizing, long-program frame growth, curated and historical header browsing, compiler diagnostics, stale results, and all six demo lessons. Handwriting tests explicitly stub the OCR provider to verify pen capture, review gating, and real compilation after confirmation. They do not measure recognition accuracy. The Docker-dependent checks fail if the runner is unavailable. Browser traces and screenshots are written to the ignored `test-results/` directory.
 
-The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, actual leak reports, new library operations, and caller-line contracts. Verification passed 51 Node/Python tests and 23 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Snapshot tests use real temporary Git repositories and cover literal file contents, unique folders, confirmation gating, large stroke scenes, failed commits, and preservation of unrelated staged work. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
+The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, actual leak reports, new library operations, and caller-line contracts. Verification passed 62 Node/Python tests and 27 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Snapshot tests use real temporary Git repositories and cover literal file contents, unique folders, confirmation gating, large stroke scenes, failed commits, and preservation of unrelated staged work. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
 
 ## Data, AI tools, and reused code
 
-Gemini is the external vision model used to transcribe handwritten code and stdin. No training dataset is bundled or used for fine-tuning. A teacher reviews its output before execution. Teaching notes remain deterministic pattern matches, not AI-generated explanations. There is no automatic code repair. Genuine handwriting accuracy still needs evaluation on classroom samples.
+Gemini is the external vision model used to transcribe handwritten code and stdin. No training dataset is bundled or used for fine-tuning. A teacher reviews its output before execution. Teaching notes remain deterministic pattern matches, not AI-generated explanations. Pseudocode mode offers optional, reviewed conversions of a limited set of teaching shorthand; the normal C and handwriting flows do not repair code automatically. Genuine handwriting accuracy still needs evaluation on classroom samples.
+
+The opt-in benchmark accepts a private JSON array such as `[{"id":"sample-01","codeImage":"sample-01.png","codeText":"int main(void) {\n...\n}","correctionSeconds":45}]`. Image paths are relative to the manifest; `stdinImage` and `stdinText` can be supplied together. Prepare gold transcriptions before running the model, and record teacher correction time separately. The command reports character error rate, exact-line rate, critical-symbol error rate, ambiguity count, and provider duration without printing classroom text. It makes one Gemini request per sample, so keep the manifest outside the repository and budget for those requests. No genuine classroom samples are bundled here.
 
 This implementation was generated with OpenAI Codex from `../whiteboard-code-verifier.md`. It reuses Excalidraw and React (MIT), Vite (MIT), the GCC container/toolchain, and Python. The curated stack header adapts the implementation in the project notes. Excalidraw integration follows its [official API documentation](https://docs.excalidraw.com/docs/@excalidraw/excalidraw/api/excalidraw-element-skeleton).
 
 ## Limits and next steps
 
 - Handwriting recognition requires a configured Gemini key and network access. Typed-only programs bypass OCR.
-- Full C programs only; no snippet wrapping. Includes are restricted to the supported standard headers listed in `runner/runner.py` and the four curated teaching headers. Writing frames can grow, while the 32 KiB source and 8 KiB input execution limits still apply.
+- The runner still executes full C programs. Pseudocode mode can prepare typed snippets for review before replacing their board text. Includes are restricted to the supported standard headers listed in `runner/runner.py` and the four curated teaching headers. Writing frames can grow, while the 32 KiB source and 8 KiB input execution limits still apply.
 - Highlights cover source lines, not individual tokens. OCR boxes are approximate model estimates. Rotated typed text is extracted but cannot receive a line highlight. Use unrotated, unwrapped typed text for predictable mapping.
 - Sanitizers alter allocation layout. Printed addresses are real, but the application does not claim to identify glibc heap/mmap regions.
-- Lesson snapshots record the scene, C source, and input in local Git history. Libraries and compiler settings are not pinned or vendored per lesson yet.
+- Lesson snapshots include the scene, C source, input, pinned library headers, compiler image, and a Docker replay script. Git synchronization requires a configured private archive remote.
 - This is a local prototype, not a public arbitrary-code service. Public deployment needs a separate execution VM, authentication, deployment-level resource controls, and a security review.
 - The Gemini OCR call is not routed through Caveman; gateway credentials/configuration have not been provided.
 

@@ -8,9 +8,11 @@ import { handwritingChannels, inkFingerprint } from './handwriting.js';
 import HandwritingPanel from './HandwritingPanel.jsx';
 import { lessons } from './lessons.js';
 import { libraries } from './libraries.js';
+import { PSEUDOCODE_LEVELS, preparePseudocode } from './pseudocode.js';
 import FrameControls from './FrameControls.jsx';
 import WorkspaceLayout from './WorkspaceLayout.jsx';
 import SnapshotHistory from './SnapshotHistory.jsx';
+import TestCases from './TestCases.jsx';
 import './styles.css';
 
 const labels = {
@@ -66,6 +68,8 @@ function App() {
   const [fullscreen, setFullscreen] = useState(false);
   const [savingSnapshot, setSavingSnapshot] = useState(false);
   const [snapshotRevision, setSnapshotRevision] = useState(0);
+  const [pseudoLevel, setPseudoLevel] = useState(1);
+  const [pseudoDraft, setPseudoDraft] = useState(null);
   const upload = useRef(null);
   const ocrPanel = useRef(null);
   const currentSignature = useRef('');
@@ -124,12 +128,13 @@ function App() {
     setLessonId(id);
     setConfirmedOcr(null);
     setResult(null);
+    setPseudoDraft(null);
     setError('');
     setNotice('Lesson loaded. Download your board before switching lessons to keep edits.');
   }
 
   async function run() {
-    if (!api || running || reading) return;
+    if (!api || running || reading || (pseudoDraft && pseudoDraft.originalSignature === signature)) return;
     setError('');
     setNotice('');
     setPanelVisible(true);
@@ -167,6 +172,22 @@ function App() {
       setError(caught.name === 'AbortError' ? 'The request timed out. Check the API and try again.' : caught.message);
       checkHealth();
     } finally { clearTimeout(timeout); setRunning(false); controller.current = null; }
+  }
+
+  function preparePseudo() {
+    if (!api || hasInk || !program.source.trim()) return;
+    const prepared = preparePseudocode(program.source, pseudoLevel);
+    setPseudoDraft({ ...prepared, originalSignature: signature });
+    setError('');
+    setNotice('Review and edit the proposed C. Use it on the board before running.');
+  }
+
+  function usePseudoDraft() {
+    if (!pseudoDraft || pseudoDraft.originalSignature !== signature || !pseudoDraft.source.trim() || hasInk) return;
+    replaceChannel(api, frameId, program.codeIds, pseudoDraft.source, CODE_COLOR);
+    setPseudoDraft(null);
+    setResult(null);
+    setNotice('Prepared C is on the board. Verify & run will compile exactly this source.');
   }
 
   function boardScene() {
@@ -225,7 +246,7 @@ function App() {
     api.updateScene({ elements: restored });
     if (data.files) api.addFiles(Object.values(data.files));
     api.scrollToContent(restored, { fitToContent: true, maxZoom: 1 });
-    setFrameId(nextFrameId); setLessonId(''); setConfirmedOcr(null); setResult(null); setError('');
+    setFrameId(nextFrameId); setLessonId(''); setConfirmedOcr(null); setResult(null); setPseudoDraft(null); setError('');
     const channels = handwritingChannels(restored, nextFrameId);
     return channels.code || channels.stdin;
   }
@@ -271,6 +292,7 @@ function App() {
     setLessonId('');
     setConfirmedOcr(null);
     setResult(null);
+    setPseudoDraft(null);
     setError('');
     setNotice('Write inside the new frame. Black ink is code; blue ink is program input.');
     setTab('handwriting');
@@ -329,12 +351,12 @@ function App() {
             <label className="field-label" htmlFor="program-frame">PROGRAM FRAME</label>
             <select id="program-frame" className="frame-select" value={frameId} disabled={running || reading} onChange={(event) => setFrameId(event.target.value)}>{!frames.length && <option value="">Create a frame on the board</option>}{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.name || 'Untitled program'}</option>)}</select>
             <p className="lesson-description">{lesson?.description ?? 'Black text in the selected frame becomes your program. Blue text becomes its input.'}</p>
-            <button className="run-button" onClick={run} disabled={running || reading || !api || !frameId}><span className={running || reading ? 'spinner' : ''}>{!running && !reading && <Icon name="play" size={18} />}</span>{reading ? 'Reading handwriting…' : running ? 'Compiling & running…' : hasInk && !recognizedProgram ? 'Read & review handwriting' : 'Verify & run'}{!running && !reading && <span className="run-button-hint">C →</span>}</button>
+            <button className="run-button" onClick={run} disabled={running || reading || !api || !frameId || Boolean(pseudoDraft && pseudoDraft.originalSignature === signature)}><span className={running || reading ? 'spinner' : ''}>{!running && !reading && <Icon name="play" size={18} />}</span>{reading ? 'Reading handwriting…' : running ? 'Compiling & running…' : pseudoDraft && pseudoDraft.originalSignature === signature ? 'Review pseudocode draft' : hasInk && !recognizedProgram ? 'Read & review handwriting' : 'Verify & run'}{!running && !reading && <span className="run-button-hint">C →</span>}</button>
             {hasInk && <p className="handwriting-state">{recognizedProgram ? 'Handwriting reviewed. Ready to compile.' : 'Handwriting needs recognition and teacher confirmation.'}</p>}
             {health && !health.available && <div className="runner-notice"><span>{health.message}</span><button onClick={checkHealth}>Check again</button></div>}
             {error && <div className="error-notice" role="alert">{error}</div>}
             {notice && <p className="notice" role="status">{notice}</p>}
-            <div className="result-tabs" role="tablist" aria-label="Run details">{[['output', 'Output'], ['handwriting', 'Handwriting'], ['source', 'Source & input'], ['library', 'Libraries'], ['history', 'History']].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => id === 'library' ? viewLibrary() : setTab(id)}>{label}</button>)}</div>
+            <div className="result-tabs" role="tablist" aria-label="Run details">{[['output', 'Output'], ['handwriting', 'Handwriting'], ['source', 'Source & input'], ['cases', 'Cases'], ['library', 'Libraries'], ['history', 'History']].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => id === 'library' ? viewLibrary() : setTab(id)}>{label}</button>)}</div>
 
             <div className="result-body" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
               <div hidden={tab !== 'handwriting'}><HandwritingPanel ref={ocrPanel}
@@ -346,6 +368,8 @@ function App() {
                   setNotice('Transcription confirmed. Verify & run will compile exactly this reviewed code.');
                 }}
               /></div>
+              <div hidden={tab !== 'cases'}><TestCases program={program} signature={signature}
+                disabled={running || reading || !api || !frameId || !program.source.trim() || Boolean(pseudoDraft && pseudoDraft.originalSignature === signature)} onBusy={setRunning} /></div>
               {tab === 'history' && <SnapshotHistory key={snapshotRevision} onOpen={(scene) => {
                 const ink = restoreBoard(scene);
                 setTab(ink ? 'handwriting' : 'source');
@@ -363,7 +387,31 @@ function App() {
                   {(result.stderr || result.compilerOutput) && <details className="raw-output"><summary>Full compiler & runtime messages</summary><pre>{[result.compilerOutput, result.stderr].filter(Boolean).join('\n')}</pre></details>}
                 </div>}
               </>}
-              {tab === 'source' && <div className="source-panel"><p className="panel-help">{hasInk ? 'Review changes in the Handwriting tab. The original strokes stay on the board.' : 'Edit here or use the canvas text tool. Changes here replace the selected frame’s black or blue text.'}</p><label className="field-label" htmlFor="source-editor">CONFIRMED SOURCE · {program.lineMap.length} LINES</label><textarea id="source-editor" className="code-editor" value={program.source} spellCheck={false} readOnly={hasInk} disabled={running || reading || !frameId} onChange={(event) => !hasInk && replaceChannel(api, frameId, program.codeIds, event.target.value, CODE_COLOR)} /><label className="field-label" htmlFor="stdin-editor">STANDARD INPUT · BLUE INK</label><textarea id="stdin-editor" className="input-editor" value={program.stdin} spellCheck={false} readOnly={hasInk} placeholder="No input: the program receives EOF." disabled={running || reading || !frameId} onChange={(event) => !hasInk && replaceChannel(api, frameId, program.inputIds, event.target.value, INPUT_COLOR)} /><span className="panel-help">{hasInk ? 'Compiler diagnostics map to approximate regions of the reviewed handwriting.' : 'Handwritten code uses the pen controls and a review step before execution.'}</span></div>}
+              {tab === 'source' && <div className="source-panel">
+                <p className="panel-help">{hasInk ? 'Review changes in the Handwriting tab. The original strokes stay on the board.' : 'Edit here or use the canvas text tool. Changes here replace the selected frame’s black or blue text.'}</p>
+                <label className="field-label" htmlFor="source-editor">CONFIRMED SOURCE · {program.lineMap.length} LINES</label>
+                <textarea id="source-editor" className="code-editor" value={program.source} spellCheck={false} readOnly={hasInk} disabled={running || reading || !frameId} onChange={(event) => { if (!hasInk) { setPseudoDraft(null); replaceChannel(api, frameId, program.codeIds, event.target.value, CODE_COLOR); } }} />
+                <div className="pseudocode-panel" aria-label="Pseudocode mode">
+                  <h3>Pseudocode mode</h3>
+                  <p className="panel-help">Each level adds more help. Prepare a draft, check every change, then place the C on the board. Nothing runs during preparation.</p>
+                  <label className="field-label" htmlFor="pseudocode-level">CORRECTION LEVEL</label>
+                  <select id="pseudocode-level" className="frame-select" value={pseudoLevel} disabled={running || reading || hasInk} onChange={(event) => setPseudoLevel(Number(event.target.value))}>{PSEUDOCODE_LEVELS.map((level) => <option key={level.value} value={level.value}>{level.label}</option>)}</select>
+                  <button className="quiet-button" onClick={preparePseudo} disabled={running || reading || hasInk || !program.source.trim()}>Prepare pseudocode</button>
+                  {hasInk && <p className="panel-help">Pseudocode mode currently edits typed code. Keep handwriting in the review flow.</p>}
+                  {pseudoDraft && <div className="pseudocode-review">
+                    {pseudoDraft.originalSignature !== signature && <p className="error-notice" role="alert">The board changed. Prepare a new draft before using it.</p>}
+                    <label className="field-label" htmlFor="pseudocode-draft">PROPOSED C · REVIEW AND EDIT</label>
+                    <textarea id="pseudocode-draft" className="code-editor" spellCheck={false} value={pseudoDraft.source} disabled={running || reading || pseudoDraft.originalSignature !== signature} onChange={(event) => setPseudoDraft({ ...pseudoDraft, source: event.target.value })} />
+                    {pseudoDraft.issues.length > 0 && <div className="pseudocode-issues"><strong>Check before running:</strong><ul>{pseudoDraft.issues.map((issue, index) => <li key={index}>Original line {issue.line}: {issue.message}</li>)}</ul></div>}
+                    <p className="panel-help">Using this draft replaces the selected frame’s black text. Save or download the original board first if you want to keep it.</p>
+                    <button className="quiet-button" onClick={usePseudoDraft} disabled={running || reading || hasInk || pseudoDraft.originalSignature !== signature || !pseudoDraft.source.trim()}>Use prepared code</button>
+                    <button className="quiet-button" onClick={() => setPseudoDraft(null)}>Discard draft</button>
+                  </div>}
+                </div>
+                <label className="field-label" htmlFor="stdin-editor">STANDARD INPUT · BLUE INK</label>
+                <textarea id="stdin-editor" className="input-editor" value={program.stdin} spellCheck={false} readOnly={hasInk} placeholder="No input: the program receives EOF." disabled={running || reading || !frameId} onChange={(event) => { if (!hasInk) { setPseudoDraft(null); replaceChannel(api, frameId, program.inputIds, event.target.value, INPUT_COLOR); } }} />
+                <span className="panel-help">{hasInk ? 'Compiler diagnostics map to approximate regions of the reviewed handwriting.' : 'Handwritten code uses the pen controls and a review step before execution.'}</span>
+              </div>}
               {tab === 'library' && <div className="library-panel">
                 <label className="field-label" htmlFor="library-select">CURATED C LIBRARIES</label>
                 <select id="library-select" className="frame-select" value={libraryFile} onChange={(event) => viewLibrary(event.target.value)}>{libraries.map((item) => <option key={item.file} value={item.file}>{item.title} · {item.file}</option>)}</select>

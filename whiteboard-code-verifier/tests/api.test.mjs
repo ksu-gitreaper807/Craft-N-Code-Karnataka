@@ -169,16 +169,25 @@ test('returns safe Gemini quota diagnostics to the browser', async (t) => {
 test('snapshot API saves and reads history independently of code execution', async (t) => {
   let runs = 0;
   let saved;
+  let retries = 0;
   const entry = { id: '2026-10-17/12-00-00-lesson-12345678', commit: 'abc123', title: 'Lesson' };
   const base = await start(t, { run: async () => { runs++; }, snapshots: {
     save: async (body) => { saved = body; return entry; }, list: async () => [entry],
     read: async (id) => { assert.equal(id, entry.id); return { type: 'excalidraw' }; },
+    libraries: async (id) => { assert.equal(id, entry.id); return { legacy: false, headers: [{ file: 'queue.h', changed: false }] }; },
+    syncStatus: async () => ({ state: 'pending', remoteConfigured: true, branch: 'boardroom-lessons' }),
+    retrySync: async () => { retries++; },
   } });
   const response = await base('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene: { type: 'excalidraw' } }) });
   assert.equal(response.status, 201);
   assert.equal(saved.scene.type, 'excalidraw');
   assert.deepEqual((await (await base('/api/snapshots')).json()).snapshots, [entry]);
   assert.equal((await (await base(`/api/snapshots/${encodeURIComponent(entry.id)}`)).json()).scene.type, 'excalidraw');
+  assert.equal((await (await base(`/api/snapshots/${encodeURIComponent(entry.id)}/libraries`)).json()).headers[0].file, 'queue.h');
+  assert.equal((await (await base('/api/snapshots/sync')).json()).state, 'pending');
+  assert.equal((await base('/api/snapshots/sync', { method: 'POST' })).status, 202);
+  assert.equal(retries, 1);
+  assert.equal((await base('/api/snapshots/sync', { method: 'POST', headers: { Origin: 'https://foreign.example' } })).status, 403);
   assert.equal((await base('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{}' })).status, 415);
   assert.equal((await base('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://foreign.example' }, body: '{}' })).status, 403);
   assert.equal((await base('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'x'.repeat(4 * 1024 * 1024 + 1) })).status, 413);

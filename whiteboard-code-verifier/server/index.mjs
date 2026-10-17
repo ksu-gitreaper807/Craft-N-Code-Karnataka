@@ -65,10 +65,18 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
       if (pathname === '/api/health' && req.method === 'GET') {
         return send(res, 200, { service: 'whiteboard-code-verifier', runner: await health(), ocr: ocrHealth() });
       }
+      if (pathname === '/api/snapshots/sync' && req.method === 'GET') return send(res, 200, await snapshots.syncStatus());
+      if (pathname === '/api/snapshots/sync' && req.method === 'POST') {
+        snapshots.retrySync().catch(() => {});
+        return send(res, 202, await snapshots.syncStatus());
+      }
       if (pathname === '/api/snapshots' && req.method === 'GET') return send(res, 200, { snapshots: await snapshots.list() });
       if (pathname === '/api/snapshots' && req.method === 'POST') {
         if (!req.headers['content-type']?.startsWith('application/json')) return send(res, 415, { error: 'Use application/json.' });
         return send(res, 201, await snapshots.save(await requestBody(req, SNAPSHOT_BODY_LIMIT)));
+      }
+      if (pathname.startsWith('/api/snapshots/') && pathname.endsWith('/libraries') && req.method === 'GET') {
+        return send(res, 200, await snapshots.libraries(pathname.slice('/api/snapshots/'.length, -'/libraries'.length)));
       }
       if (pathname.startsWith('/api/snapshots/') && req.method === 'GET') {
         return send(res, 200, { scene: await snapshots.read(pathname.slice('/api/snapshots/'.length)) });
@@ -136,9 +144,14 @@ export function createApp(options) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   loadOcrEnvironment();
   const port = Number(process.env.PORT ?? 8787);
-  const server = createApp();
+  const snapshots = createSnapshotStore();
+  const server = createApp({ snapshots });
   server.requestTimeout = 10_000;
   server.headersTimeout = 10_000;
-  server.listen(port, '127.0.0.1', () => console.log(`Boardroom API: http://127.0.0.1:${port}`));
+  server.listen(port, '127.0.0.1', () => {
+    console.log(`Boardroom API: http://127.0.0.1:${port}`);
+    snapshots.startSync();
+  });
+  server.on('close', () => snapshots.stopSync());
   server.on('error', (error) => { console.error(error.message); process.exitCode = 1; });
 }

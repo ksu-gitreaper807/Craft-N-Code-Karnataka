@@ -5,6 +5,22 @@ import { join } from 'node:path';
 
 const archive = fileURLToPath(new URL('../../test-results/lesson-snapshots/', import.meta.url));
 
+test('compares a committed teaching header with the current version without opening the board', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('tab', { name: 'Source & input' }).click();
+  await page.getByLabel(/CONFIRMED SOURCE/).fill('#include <queue.h>\nint main(void) { Queue q; queue_init(&q); queue_free(&q); return 0; }');
+  const savedResponse = page.waitForResponse((response) => response.url().endsWith('/api/snapshots') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Save lesson snapshot' }).click();
+  const saved = await (await savedResponse).json();
+  const entry = page.locator('.snapshot-history li').filter({ hasText: saved.id });
+  await entry.getByRole('button', { name: 'Compare saved libraries' }).click();
+  await expect(page.getByLabel('Saved library comparison')).toContainText('queue.h');
+  await page.locator('#saved-library-select').selectOption('queue.h');
+  await expect(page.getByLabel('Saved library comparison')).toContainText('matches the saved lesson');
+  await expect(page.locator('.library-comparison pre')).toHaveCount(2);
+  expect(await page.locator('.library-comparison pre').first().textContent()).toBe(await page.locator('.library-comparison pre').last().textContent());
+});
+
 test('saves literal lesson files with real Git history and reopens the saved board without running code', async ({ page }) => {
   let runs = 0;
   page.on('request', (request) => { if (request.url().endsWith('/api/run')) runs++; });
@@ -20,13 +36,14 @@ test('saves literal lesson files with real Git history and reopens the saved boa
   const saved = await response.json();
   expect(saved.commit).toMatch(/^[a-f0-9]{40,64}$/);
   expect(saved.id).toMatch(/^\d{4}-\d{2}-\d{2}\//);
-  expect((await readdir(join(archive, saved.id))).sort()).toEqual(['board.c', 'board.excalidraw', 'input.txt']);
+  expect((await readdir(join(archive, saved.id))).sort()).toEqual(['.dockerignore', 'Dockerfile', 'board.c', 'board.excalidraw', 'build.sh', 'input.txt', 'lib.lock', 'replay.py', 'runner.py']);
   expect(await readFile(join(archive, saved.id, 'board.c'), 'utf8')).toBe(source);
   expect(await readFile(join(archive, saved.id, 'input.txt'), 'utf8')).toBe('3 5\n\n');
   const scene = JSON.parse(await readFile(join(archive, saved.id, 'board.excalidraw'), 'utf8'));
   expect(scene.elements.some((element) => element.text === source)).toBe(true);
   await expect(page.getByRole('tab', { name: 'History', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('.snapshot-history')).toContainText(saved.commit.slice(0, 8));
+  await expect(page.locator('.snapshot-history [role=status]')).toContainText('saved on this machine');
   // Saving again while already viewing history refreshes it and never overwrites.
   const nextResponse = page.waitForResponse((item) => item.url().endsWith('/api/snapshots') && item.request().method() === 'POST');
   await page.getByRole('button', { name: 'Save lesson snapshot', exact: true }).click();

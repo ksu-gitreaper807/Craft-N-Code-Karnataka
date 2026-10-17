@@ -123,7 +123,7 @@ def parse_diagnostics(compiler_output, runtime_output):
 
 
 def teaching_notes(source):
-    code = strip_comments(source)
+    code = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', ' ', strip_comments(source))
     notes = []
     if re.search(r"\b(?:malloc|calloc|realloc)\s*\(", code):
         notes.append({"title": "Two places, one pointer", "body":
@@ -134,6 +134,10 @@ def teaching_notes(source):
         notes.append({"title": "After free", "body":
                       "The allocation is no longer yours to access. Other pointers to it also become dangling. "
                       "Setting one pointer to NULL does not repair its aliases."})
+    if re.search(r"\brealloc\s*\(", code):
+        notes.append({"title": "Keep the old allocation on failure", "body":
+                      "realloc may move the buffer and invalidate old aliases. If it fails, the original "
+                      "allocation remains valid; assign the result to a temporary pointer before replacing the owner."})
     if re.search(r"\bstack_(?:push|pop)\s*\(", code):
         notes.append({"title": "A visible abstraction", "body":
                       "stack_push grows a heap buffer with realloc; stack_pop requires a nonempty stack. "
@@ -142,6 +146,14 @@ def teaching_notes(source):
         notes.append({"title": "Input is a contract too", "body":
                       "Check scanf's return value before using its outputs. Blue text supplies stdin; "
                       "when it is exhausted, the program receives EOF."})
+    if re.search(r"\bfgets\s*\(", code):
+        notes.append({"title": "Bounded line input", "body":
+                      "fgets reads at most size - 1 characters and appends a NUL byte. Check for NULL at EOF "
+                      "and remember that a trailing newline may remain in the buffer."})
+    if re.search(r"\bmemcpy\s*\(", code):
+        notes.append({"title": "Copies need valid ranges", "body":
+                      "memcpy needs readable and writable ranges for its byte count. The ranges must not "
+                      "overlap; use memmove when they may overlap."})
     if re.search(r"\blist_(?:push_front|push_back|insert|erase|pop_front)\s*\(", code):
         notes.append({"title": "Follow the links", "body":
                       "Each list node owns a value and a link to the next node. Front and tail insertion are O(1); "

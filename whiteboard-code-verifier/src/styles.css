@@ -160,3 +160,26 @@ pre { margin: 0; font: 11px/1.7 'SFMono-Regular', Consolas, 'Liberation Mono', m
 @media (max-width: 520px) { .topbar { padding: 0 8px; gap: 8px; } .brand { font-size: 20px; gap: 6px; } .brand-mark { width: 28px; height: 28px; } .quiet-button { padding: 7px; font-size: 10px; } .quiet-button span { display: none; } .header-actions { gap: 5px; } .lesson-select > span { display: none; } .workspace-bar { padding: 0 10px; } .frame-controls { gap: 6px; padding: 5px 10px; } .frame-controls > span { display: none; } .frame-controls input { width: 60px; } .canvas-footer { padding: 0 10px; gap: 12px; } }
 @media (max-width: 360px) { .brand > span:last-child { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+.pseudocode-panel { margin: 16px 0; padding: 13px; border: 1px solid #dfe7d0; border-radius: 6px; background: #f7f9f3; }
+.pseudocode-panel h3 { margin: 0 0 7px; font-size: 12px; }
+.pseudocode-panel > .quiet-button, .pseudocode-review .quiet-button { margin: 8px 8px 0 0; }
+.pseudocode-review { margin-top: 14px; }
+.pseudocode-review .code-editor { min-height: 220px; }
+.pseudocode-issues { margin: 10px 0; font-size: 11px; line-height: 1.5; color: #6b4d23; }
+.pseudocode-issues ul { padding-left: 18px; margin: 5px 0; }
+.snapshot-comparison { margin-top: 1rem; padding: 1rem; border: 1px solid #d8e1e9; border-radius: 12px; background: #f8fafc; }
+.library-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin-top: .75rem; }
+.library-comparison pre { max-height: 22rem; overflow: auto; padding: .75rem; background: white; border: 1px solid #d8e1e9; border-radius: 6px; font-size: .75rem; }
+.test-cases h3 { margin-top: 0; font-size: 14px; }
+.test-case-editor { padding: 12px; margin: 12px 0; border: 1px solid #dfe5d7; border-radius: 6px; background: #fff; }
+.test-case-editor input:not([type=checkbox]), .test-case-editor textarea, .test-case-editor select { display: block; width: 100%; padding: 8px; margin: 4px 0 12px; border: 1px solid #dfe4d6; border-radius: 5px; background: #fff; font: 11px/1.5 'SFMono-Regular', Consolas, monospace; }
+.test-case-editor textarea { min-height: 64px; resize: vertical; }
+.case-check { display: flex; gap: 7px; align-items: center; margin: 10px 0; font-size: 10px; }
+.case-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.case-results { padding-left: 20px; }
+.case-results li { padding: 10px; margin-top: 8px; border: 1px solid #e6dfd2; border-radius: 5px; }
+.case-results li.passed { border-color: #bfd8b8; background: #f4faf2; }
+.case-results li.failed { border-color: #e4c6b9; background: #fff6f2; }
+.case-results strong, .case-results span { display: block; margin-bottom: 4px; font-size: 10px; }
+.case-results pre { max-height: 170px; overflow: auto; padding: 8px; background: #fff; }
+@media (max-width: 760px) { .library-comparison { grid-template-columns: 1fr; } }

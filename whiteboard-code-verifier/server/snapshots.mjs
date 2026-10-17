@@ -1,17 +1,21 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, mkdtemp, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractProgram, isOverlay } from '../src/board.js';
 import { handwritingChannels, inkFingerprint } from '../src/handwriting.js';
+import { snapshotBundle } from './snapshot-bundle.mjs';
+import { createSnapshotSync } from './snapshot-sync.mjs';
+import { libraries } from '../src/libraries.js';
 
 const execute = promisify(execFile);
 const APP = fileURLToPath(new URL('../', import.meta.url));
 export const SNAPSHOT_BODY_LIMIT = 4 * 1024 * 1024;
 const ID = /^\d{4}-\d{2}-\d{2}\/\d{2}-\d{2}-\d{2}-[a-z0-9-]{1,60}-[a-f0-9]{8}$/;
 const invalid = (message, status = 400) => Object.assign(new Error(message), { status });
+const HISTORICAL_HEADERS = new Set([...libraries.map((library) => library.file), 'board_contract.h']);
 
 function snapshotProgram(scene) {
   if (scene?.type !== 'excalidraw' || !Array.isArray(scene.elements) || scene.elements.length > 2000 ||
@@ -46,17 +50,23 @@ function snapshotProgram(scene) {
 export function createSnapshotStore({ root = resolve(APP, process.env.SNAPSHOT_DIR || 'snapshots'), now = () => new Date() } = {}) {
   root = resolve(root);
   let saving = false;
-  const git = async (args) => (await execute('git', [
+  const git = async (args, timeout = 8000) => (await execute('git', [
     '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false',
     '-c', 'user.name=Boardroom', '-c', 'user.email=boardroom@localhost', '-C', root, ...args,
-  ], { timeout: 8000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })).stdout;
+  ], { timeout, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })).stdout;
 
   async function hasHistory() {
     try { return (await stat(join(root, '.git'))).isDirectory(); }
     catch (error) { if (error.code === 'ENOENT') return false; throw error; }
   }
 
+  const sync = createSnapshotSync({ git, hasHistory });
+
   return {
+    syncStatus: sync.status,
+    retrySync: sync.sync,
+    startSync: sync.start,
+    stopSync: sync.stop,
     async save(body) {
       if (saving) throw invalid('A snapshot is already being saved. Try again shortly.', 429);
       saving = true;
@@ -73,23 +83,28 @@ export function createSnapshotStore({ root = resolve(APP, process.env.SNAPSHOT_D
         // Compact JSON keeps large stroke arrays within the board import limit.
         const serialized = JSON.stringify(savedScene) + '\n';
         if (Buffer.byteLength(serialized) > 2_000_000) throw invalid('The saved scene exceeds the 2 MB board import limit.');
+        const bundle = await snapshotBundle(savedScene, program);
+        const files = new Map([['board.excalidraw', serialized], ['board.c', program.source], ['input.txt', program.stdin], ...bundle.files]);
+        files.set('lib.lock', bundle.manifest(files));
         const parent = join(root, day);
         await mkdir(parent, { recursive: true, mode: 0o700 });
         const temporary = await mkdtemp(join(parent, '.pending-'));
         try {
-          await writeFile(join(temporary, 'board.excalidraw'), serialized, { mode: 0o600 });
-          await writeFile(join(temporary, 'board.c'), program.source, { mode: 0o600 });
-          await writeFile(join(temporary, 'input.txt'), program.stdin, { mode: 0o600 });
+          for (const [name, content] of files) {
+            if (name.startsWith('lib/')) await mkdir(join(temporary, 'lib'), { recursive: true, mode: 0o700 });
+            await writeFile(join(temporary, name), content, { mode: 0o600 });
+          }
           await rename(temporary, join(root, id));
         } catch (error) { await rm(temporary, { recursive: true, force: true }); throw error; }
         const result = { id, title, createdAt, commit: null };
         try {
-          const paths = ['board.excalidraw', 'board.c', 'input.txt'].map((name) => `${id}/${name}`);
+          const paths = [...files.keys()].map((name) => `${id}/${name}`);
           await git(['init', '--quiet']);
           await git(['add', '--force', '--', ...paths]);
           // Only commit this new folder, even if the local archive has other staged work.
           await git(['commit', '--quiet', '--only', `--date=${createdAt}`, '-m', `board: ${title}`, '--', ...paths]);
           result.commit = (await git(['rev-parse', 'HEAD'])).trim();
+          sync.queue();
         } catch {
           result.warning = 'Files were saved, but Git history could not be recorded. Check that Git is installed and the snapshot repository is writable, then commit the saved folder manually.';
         }
@@ -117,6 +132,36 @@ export function createSnapshotStore({ root = resolve(APP, process.env.SNAPSHOT_D
       if (!ID.test(id)) throw invalid('Snapshot not found.', 404);
       try { return JSON.parse(await git(['show', `HEAD:${id}/board.excalidraw`])); }
       catch { throw invalid('Snapshot not found in Git history.', 404); }
+    },
+    async libraries(id) {
+      if (!ID.test(id)) throw invalid('Snapshot not found.', 404);
+      let rawManifest;
+      try { rawManifest = await git(['show', `HEAD:${id}/lib.lock`]); }
+      catch {
+        // Snapshots from before portable bundles have no vendored headers.
+        try { await git(['cat-file', '-e', `HEAD:${id}/board.excalidraw`]); }
+        catch { throw invalid('Snapshot not found in Git history.', 404); }
+        return { legacy: true, headers: [] };
+      }
+      let manifest;
+      try { manifest = JSON.parse(rawManifest); }
+      catch { throw invalid('Saved library manifest is unreadable.', 503); }
+      if (!manifest || typeof manifest.files !== 'object' || !manifest.files || Array.isArray(manifest.files)) {
+        throw invalid('Saved library manifest is unreadable.', 503);
+      }
+      const names = Object.keys(manifest.files ?? {}).filter((path) =>
+        path.startsWith('lib/') && HISTORICAL_HEADERS.has(path.slice(4))).sort();
+      let headers;
+      try {
+        headers = await Promise.all(names.map(async (path) => {
+          const file = path.slice(4);
+          const [saved, current] = await Promise.all([
+            git(['show', `HEAD:${id}/${path}`]), readFile(join(APP, 'runner/lib', file), 'utf8'),
+          ]);
+          return { file, saved, current, changed: saved !== current };
+        }));
+      } catch { throw invalid('Could not read the saved library files.', 503); }
+      return { legacy: false, headers };
     },
   };
 }

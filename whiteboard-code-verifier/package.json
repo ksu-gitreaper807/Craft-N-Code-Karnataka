@@ -16,7 +16,8 @@
     "runner:build": "docker build -t whiteboard-runner:local runner",
     "test:docker": "node scripts/check-runner.mjs",
     "test:browser": "playwright test",
-    "test:ocr": "node scripts/check-ocr.mjs"
+    "test:ocr": "node scripts/check-ocr.mjs",
+    "benchmark:ocr": "node scripts/benchmark-ocr.mjs"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.0",
