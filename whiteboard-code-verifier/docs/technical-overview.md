@@ -130,6 +130,9 @@ Six starter lessons demonstrate input/output, a use-after-free error, an empty-s
 | `POST /api/ocr` | Recognize supplied code/input PNG data URLs; return an unconfirmed transcription |
 | `POST /api/run` | Compile and execute `{ "source": "...", "stdin": "..." }` |
 | `GET /api/library/<name>` | Serve an allowlisted public teaching header: `stack.h`, `linked_list.h`, `queue.h`, or `search.h` |
+| `POST /api/snapshots` | Save a dated lesson folder and local Git commit from the supplied scene |
+| `GET /api/snapshots` | List the latest 30 snapshot commits |
+| `GET /api/snapshots/<id>` | Read the committed Excalidraw scene for a saved lesson |
 
 OCR permits one request in flight and six attempts per minute, with a 4 MiB request-body limit and a 60-second provider deadline. Execution permits two requests in flight and 20 attempts per minute. These limits are process-local and reset when the server restarts.
 
@@ -139,7 +142,9 @@ The server binds to loopback and checks request hosts and origins. The local `.e
 
 ## 9. Storage and repository organization
 
-There is no application database, user-account system, or cloud lesson store. The working board is held in browser application state. Teachers preserve it by downloading an Excalidraw-compatible JSON scene containing elements, reviewed OCR provenance, and the current run result when valid. Imported scenes require fresh recognition/review and execution; saved confirmation is not trusted. Automatic Git-backed lesson history remains future work.
+There is no application database, user-account system, or cloud lesson store. The working board is held in browser application state. Teachers can download its Excalidraw-compatible scene or use **Snapshot** to save `board.excalidraw`, `board.c`, and `input.txt` on the API server. Snapshot folders are grouped by UTC date, with a time/title/unique suffix for each save. Source and input are derived from the selected frame; handwritten source requires a matching confirmed transcription. Saving does not require successful compilation or a working Docker runner.
+
+The archive is a separate local Git repository under `snapshots/`, initialized on first save. Each snapshot creates one commit containing only its three files. **History** lists the latest 30 commits and opens their saved scenes. Opening restores the selected frame but requires fresh execution and, for handwriting, review. Git failures preserve the saved files and produce a visible warning. `SNAPSHOT_DIR` can relocate the archive. There is no automatic remote push, header vendoring, library lockfile, or frozen build script in this basic implementation.
 
 ```text
 src/                 React UI, board extraction, capture, review, and overlays
@@ -150,6 +155,7 @@ tests/               Node/Python tests, browser checks, and synthetic OCR sample
 docs/                Technical overview and OCR research
 public/fonts/        Generated local copies of Excalidraw fonts
 dist/                Generated production frontend
+snapshots/           Local lesson files and their separate Git history (ignored by app Git)
 ```
 
 Hackathon submission materials live outside the application directory.
@@ -173,6 +179,6 @@ Development serves the frontend at `http://127.0.0.1:5173` and the API at `http:
 | `npm run test:browser` | Production frontend, review workflow, import/export, responsive layout, and real Docker runs |
 | `npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png` | Opt-in live Gemini request; prints unconfirmed text without executing it |
 
-The most recent implementation verification passed 40 Node/Python tests, 14 Docker checks, and 19 browser tests. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public header browsing, and all six examples. The browser suite stubs OCR responses explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
+Implementation verification passed 51 Node/Python tests and 23 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public header browsing, all six examples, and saving/reopening real Git-backed snapshots. Snapshot failure cases preserve written files and unrelated staged application changes. The browser suite stubs OCR responses explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
 
 These results establish the working integration. Human handwriting accuracy, critical-symbol error rates, and correction time still require a benchmark on genuine classroom samples. Other material limits are full-C-program input only, restricted includes, approximate handwriting highlights, no automatic code repair, no collaboration or authentication, and local-only deployment. Caveman gateway observability is not connected in the current implementation.

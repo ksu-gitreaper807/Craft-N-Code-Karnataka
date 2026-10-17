@@ -15,7 +15,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'node server/index.mjs',
-    env: { PORT: '8878' },
+    env: { PORT: '8878', SNAPSHOT_DIR: 'test-results/lesson-snapshots' },
     url: 'http://127.0.0.1:8878',
     reuseExistingServer: false,
   },

@@ -73,7 +73,7 @@ h2 { font: 650 20px 'Manrope', sans-serif; letter-spacing: -.7px; margin: 7px 0 
 .runner-notice button { display: block; border: none; padding: 0; margin-top: 4px; font-size: 10px; color: #70623e; background: none; text-decoration: underline; }
 .error-notice { background: #fff0eb; color: #a14c3c; border-color: #f4d7ca; overflow-wrap: anywhere; }
 .notice { font-size: 10px; color: #65805c; line-height: 1.6; }
-.result-tabs { margin-top: 23px; display: flex; border-bottom: 1px solid #e2e6db; gap: 14px; }
+.result-tabs { margin-top: 23px; display: flex; flex-wrap: wrap; border-bottom: 1px solid #e2e6db; gap: 14px; }
 .result-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; font-size: 10px; padding: 0 0 11px; color: #8b9482; }
 .result-tabs button[aria-selected='true'] { border-bottom-color: #3e6a47; color: #3e6245; font-weight: 600; }
 .result-body { padding: 17px 0 25px; }
@@ -147,9 +147,15 @@ pre { margin: 0; font: 11px/1.7 'SFMono-Regular', Consolas, 'Liberation Mono', m
 .library-source { font-size: 9px; padding: 10px; border: 1px solid #e1e6da; border-radius: 5px; background: #f4f7ef; max-height: 550px; overflow: auto; color: #64765b; }
 .library-methods { font: 11px/1.8 monospace; overflow-wrap: anywhere; color: #526b47; }
 .library-panel .quiet-button { margin-bottom: 16px; }
+.snapshot-history ol { list-style: none; padding: 0; }
+.snapshot-history li { border: 1px solid #dfe5d7; border-radius: 6px; padding: 12px; margin-top: 12px; background: #fff; }
+.snapshot-history h3 { margin-top: 0; font-size: 14px; }
+.snapshot-history h4 { margin: 0 0 8px; font-size: 12px; }
+.snapshot-history time, .snapshot-history small { display: block; font-size: 10px; color: #7b8871; margin-bottom: 8px; }
+.snapshot-history code { display: block; font-size: 10px; line-height: 1.7; overflow-wrap: anywhere; margin-bottom: 8px; }
 .page-footer { display: flex; justify-content: space-between; align-items: center; gap: 15px; font-size: 9px; color: #9aa18e; padding: 16px 0 20px; }
 .page-footer > span:first-child { display: flex; align-items: center; gap: 6px; }
-@media (max-width: 1100px) { .project-name .tag { display: none; } .canvas-footer .annotation-key { display: none; } }
+@media (max-width: 1100px) { .project-name { display: none; } .canvas-footer .annotation-key { display: none; } }
 @media (max-width: 800px) { .project-name { display: none; } .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(200px, 1fr) minmax(200px, 42%); } .workspace--focused { grid-template-rows: minmax(0, 1fr); } .panel-divider { display: none; } .inspector { border-top: 1px solid #dfe3d9; } .run-heading { margin-bottom: 16px; } }
 @media (max-width: 520px) { .topbar { padding: 0 8px; gap: 8px; } .brand { font-size: 20px; gap: 6px; } .brand-mark { width: 28px; height: 28px; } .quiet-button { padding: 7px; font-size: 10px; } .quiet-button span { display: none; } .header-actions { gap: 5px; } .lesson-select > span { display: none; } .workspace-bar { padding: 0 10px; } .frame-controls { gap: 6px; padding: 5px 10px; } .frame-controls > span { display: none; } .frame-controls input { width: 60px; } .canvas-footer { padding: 0 10px; gap: 12px; } }
 @media (max-width: 360px) { .brand > span:last-child { display: none; } }

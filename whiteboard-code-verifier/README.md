@@ -18,10 +18,11 @@ See the [technical stack and project overview](docs/technical-overview.md) for t
 - A memory diagram using actual stack-pointer and buffer addresses printed by the memory lesson.
 - Trusted header-only `stack.h`, `linked_list.h`, `queue.h`, and `search.h`, visible in the UI, with teacher callsite attribution.
 - Rule-based teaching notes and downloadable/importable Excalidraw scenes. Downloads include the current result when it still matches the board.
+- Dated lesson snapshots containing the scene, selected program's C source, and stdin, with local Git commits and a History tab.
 
 ## Run locally
 
-Prerequisites: Node.js 22.12+ and Linux Docker Engine with a working daemon. GCC runs **inside Docker**; the application never falls back to executing submitted programs on the host.
+Prerequisites: Node.js 22.12+, Git for lesson history, and Linux Docker Engine with a working daemon. GCC runs **inside Docker**; the application never falls back to executing submitted programs on the host.
 
 ```bash
 cd whiteboard-code-verifier
@@ -79,7 +80,35 @@ The socket ACL grants only your current user daemon access and lasts until the s
 3. Load **A memory mistake**. Run to see the actual use-after-free diagnostic. Move `free(values)` below the last `printf`, then rerun.
 4. Load **Under the abstraction**. The empty-stack contract points to `stack_pop`. Add `stack_push(&s, 42);` before the pop, then rerun.
 
-Download before switching lessons or refreshing to retain edits. Imported boards need at least one frame. Downloads preserve the ink, reviewed OCR provenance, and current run result. Importing does not trust saved confirmation or verification results: recognize/review handwriting again and rerun. Editing after a run marks the old result stale and removes its highlights.
+Download or save a snapshot before switching lessons or refreshing to retain edits. Imported boards need at least one frame. Downloads preserve the ink, reviewed OCR provenance, and current run result. Importing does not trust saved confirmation or verification results: recognize/review handwriting again and rerun. Editing after a run marks the old result stale and removes its highlights.
+
+## Lesson snapshots and Git history
+
+Click **Snapshot** in the top bar to save the current board and the selected frame's source/input on the API server. Handwriting must be reviewed and confirmed first. Typed lessons can be saved before running, including incomplete or intentionally incorrect C. Saving never compiles the program or calls Gemini.
+
+```text
+snapshots/                         # separate local Git repository, created on first save
+  2026-10-17/                      # UTC date
+    12-30-05-input-output-a1b2c3d4/ # UTC time, lesson title, unique suffix
+      board.excalidraw
+      board.c
+      input.txt
+```
+
+Every click creates a new folder; existing snapshots are not overwritten. `board.excalidraw` retains the full canvas and selected-frame metadata. `board.c` contains the selected frame's exact typed or confirmed source, and `input.txt` preserves literal input, including blank lines. The three files are recorded together with a `board: <lesson title>` Git commit. This archive is separate from the application repository and has no remote configured automatically.
+
+The **History** tab lists the latest 30 snapshot commits. **Open saved board** restores the committed scene; save current work first because opening replaces the canvas. Saved execution results are not trusted on opening, and handwritten code requires fresh review before running or snapshotting again. The previously confirmed source remains available in the snapshot's `board.c`.
+
+From the app root, inspect the archive with:
+
+```bash
+git -C snapshots log --oneline
+git -C snapshots show --stat HEAD
+```
+
+Set `SNAPSHOT_DIR` to change the archive location, then restart the API; relative paths resolve from the application directory. The default `snapshots/` directory is ignored by the application repository. Lesson history stays local; pushing it requires configuring a remote separately. If a Git commit fails, the files remain saved and the UI reports the failure. Once Git is available, commit that folder manually from the archive directory with `git add -- <dated-folder>` and `git commit --only -m "board: Recovered lesson" -- <dated-folder>`.
+
+This basic format uses the current runner and library headers when rerun. It does not vendor libraries, pin toolchains, or include a build script.
 
 ## Architecture
 
@@ -102,6 +131,8 @@ The Node API uses only built-in modules. Python's standard library owns compilat
 
 `POST /api/ocr` accepts `{ "code": "data:image/png;base64,...", "stdin": "data:image/png;base64,..." }`; omit a channel when it contains no handwriting. It returns line text, normalized line boxes, ambiguity flags, alternatives, provider/model metadata, and `requiresConfirmation: true`. It never compiles or runs anything. Requests are limited to 4 MiB, PNG dimensions to 2048 × 2048, one recognition at a time, and six attempts per minute. The provider deadline is 60 seconds.
 
+`POST /api/snapshots` accepts `{ "title": "Lesson name", "scene": { ... } }` and returns the dated folder ID and local Git commit. Source and stdin are derived from the scene, with current OCR confirmation required for handwritten channels. Snapshot bodies are limited to 4 MiB and scene data to 2 MB. `GET /api/snapshots` lists recent history; `GET /api/snapshots/<id>` reads a committed scene. These endpoints use the same loopback host/origin restrictions as execution.
+
 ## Verification
 
 ```bash
@@ -117,7 +148,7 @@ Tests require Python 3.10+ and host GCC with ASan/UBSan. Only fixed repository-o
 
 Browser tests serve the production build on loopback port 8878 and shut down their own server afterward. They exercise source/input editing, board download/import, a phone viewport, fullscreen, panel resizing, long-program frame growth, curated-header browsing, compiler diagnostics, stale results, and all six demo lessons. Handwriting tests explicitly stub the OCR provider to verify pen capture, review gating, and real compilation after confirmation. They do not measure recognition accuracy. The Docker-dependent checks fail if the runner is unavailable. Browser traces and screenshots are written to the ignored `test-results/` directory.
 
-The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, actual leak reports, new library operations, and caller-line contracts. The suite passed 40 Node/Python tests, 14 Docker checks, and 19 browser tests. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
+The Docker runner was verified locally with leak detection enabled, including EOF handling, an infinite-loop timeout, bounded output, actual leak reports, new library operations, and caller-line contracts. Verification passed 51 Node/Python tests and 23 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Snapshot tests use real temporary Git repositories and cover literal file contents, unique folders, confirmation gating, large stroke scenes, failed commits, and preservation of unrelated staged work. A live Gemini 3.8 Flash smoke check returned HTTP 200 and faithfully transcribed all seven lines of the [synthetic sample](tests/fixtures/ocr/README.md), including its intentional missing `&` and semicolon. A separate live browser check captured typed code plus a pen stroke, used Gemini without a provider stub, required teacher correction/confirmation, and ran the corrected program in Docker with stdout `3`. These synthetic checks and the fixture-based browser tests must not be interpreted as a human handwriting accuracy benchmark.
 
 ## Data, AI tools, and reused code
 
@@ -131,7 +162,7 @@ This implementation was generated with OpenAI Codex from `../whiteboard-code-ver
 - Full C programs only; no snippet wrapping. Includes are restricted to the supported standard headers listed in `runner/runner.py` and the four curated teaching headers. Writing frames can grow, while the 32 KiB source and 8 KiB input execution limits still apply.
 - Highlights cover source lines, not individual tokens. OCR boxes are approximate model estimates. Rotated typed text is extracted but cannot receive a line highlight. Use unrotated, unwrapped typed text for predictable mapping.
 - Sanitizers alter allocation layout. Printed addresses are real, but the application does not claim to identify glibc heap/mmap regions.
-- Scene downloads are local exports, not Git-backed reproducible snapshots. Libraries are not vendored per lesson yet.
+- Lesson snapshots record the scene, C source, and input in local Git history. Libraries and compiler settings are not pinned or vendored per lesson yet.
 - This is a local prototype, not a public arbitrary-code service. Public deployment needs a separate execution VM, authentication, deployment-level resource controls, and a security review.
 - The Gemini OCR call is not routed through Caveman; gateway credentials/configuration have not been provided.
 

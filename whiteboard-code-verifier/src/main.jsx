@@ -10,6 +10,7 @@ import { lessons } from './lessons.js';
 import { libraries } from './libraries.js';
 import FrameControls from './FrameControls.jsx';
 import WorkspaceLayout from './WorkspaceLayout.jsx';
+import SnapshotHistory from './SnapshotHistory.jsx';
 import './styles.css';
 
 const labels = {
@@ -63,6 +64,8 @@ function App() {
   const [libraryFile, setLibraryFile] = useState('stack.h');
   const [panelVisible, setPanelVisible] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const [snapshotRevision, setSnapshotRevision] = useState(0);
   const upload = useRef(null);
   const ocrPanel = useRef(null);
   const currentSignature = useRef('');
@@ -166,14 +169,22 @@ function App() {
     } finally { clearTimeout(timeout); setRunning(false); controller.current = null; }
   }
 
-  function download() {
-    const snapshot = {
+  function boardScene() {
+    const current = structuredClone(api.getSceneElements().filter((el) => !isOverlay(el)));
+    const reviewed = confirmedOcr?.frameId === frameId && confirmedOcr.fingerprint === inkFingerprint(current, frameId) ? confirmedOcr : null;
+    const channels = handwritingChannels(current, frameId);
+    const currentProgram = channels.code || channels.stdin ? reviewed?.program : extractProgram(current, frameId);
+    return {
       type: 'excalidraw', version: 2, source: 'boardroom',
-      elements: api.getSceneElements().filter((el) => !isOverlay(el)),
+      elements: current,
       appState: { viewBackgroundColor: '#ffffff', gridSize: null }, files: api.getFiles(),
-      verifier: { frameId, result: stale ? null : result,
-        ocr: recognizedProgram ? confirmedOcr : null },
+      verifier: { frameId, result: currentProgram && result?.signature === programSignature(currentProgram, frameId) ? result : null,
+        ocr: reviewed },
     };
+  }
+
+  function download() {
+    const snapshot = boardScene();
     const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -183,6 +194,42 @@ function App() {
     setNotice('Board downloaded with its scene and current run result.');
   }
 
+  async function saveSnapshot() {
+    if (!api || savingSnapshot || running || reading) return;
+    const scene = boardScene();
+    const channels = handwritingChannels(scene.elements, frameId);
+    if ((channels.code || channels.stdin) && !scene.verifier.ocr) {
+      setError('Review and confirm the current handwriting before saving a snapshot.');
+      setPanelVisible(true); setTab('handwriting'); return;
+    }
+    setSavingSnapshot(true); setError(''); setNotice('');
+    try {
+      const response = await fetch('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: selectedFrame?.name || lesson?.title || 'Lesson', scene }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? 'Could not save the lesson snapshot.');
+      setPanelVisible(true);
+      setNotice(`Snapshot saved: ${data.id}${data.commit ? ` · Git ${data.commit.slice(0, 8)}` : ''}`);
+      if (data.warning) setError(data.warning);
+      else { setSnapshotRevision((revision) => revision + 1); setTab('history'); }
+    } catch (caught) { setPanelVisible(true); setError(caught.message); }
+    finally { setSavingSnapshot(false); }
+  }
+
+  function restoreBoard(data) {
+    if (data.type !== 'excalidraw' || !Array.isArray(data.elements) || data.elements.length > 2000) throw new Error('Choose an Excalidraw scene with at most 2,000 elements.');
+    const restored = restoreElements(data.elements.filter((el) => !isOverlay(el)), null);
+    const nextFrames = framesIn(restored);
+    if (!nextFrames.length) throw new Error('This board needs a frame. Create one in Excalidraw before importing.');
+    const nextFrameId = nextFrames.some((frame) => frame.id === data.verifier?.frameId) ? data.verifier.frameId : nextFrames[0].id;
+    api.updateScene({ elements: restored });
+    if (data.files) api.addFiles(Object.values(data.files));
+    api.scrollToContent(restored, { fitToContent: true, maxZoom: 1 });
+    setFrameId(nextFrameId); setLessonId(''); setConfirmedOcr(null); setResult(null); setError('');
+    const channels = handwritingChannels(restored, nextFrameId);
+    return channels.code || channels.stdin;
+  }
+
   async function importBoard(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -190,16 +237,7 @@ function App() {
     try {
       if (file.size > 2_000_000) throw new Error('Choose a board smaller than 2 MB.');
       const data = JSON.parse(await file.text());
-      if (data.type !== 'excalidraw' || !Array.isArray(data.elements) || data.elements.length > 2000) throw new Error('Choose an Excalidraw scene with at most 2,000 elements.');
-      const restored = restoreElements(data.elements.filter((el) => !isOverlay(el)), null);
-      if (!framesIn(restored).length) throw new Error('This board needs a frame. Create one in Excalidraw before importing.');
-      api.updateScene({ elements: restored });
-      if (data.files) api.addFiles(Object.values(data.files));
-      api.scrollToContent(restored, { fitToContent: true, maxZoom: 1 });
-      setLessonId('');
-      setConfirmedOcr(null);
-      setResult(null);
-      setError('');
+      restoreBoard(data);
       setNotice('Board imported. Run it to verify the current code.');
     } catch (caught) { setError(`Could not import: ${caught.message}`); }
   }
@@ -252,6 +290,10 @@ function App() {
         <div className="header-actions">
           <button className="quiet-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={toggleFullscreen}>⛶ <span>{fullscreen ? 'Exit fullscreen' : 'Fullscreen'}</span></button>
           <button className="quiet-button" aria-pressed={!panelVisible} onClick={() => setPanelVisible((visible) => !visible)}>{panelVisible ? 'Hide panel' : 'Show panel'}</button>
+          <button className="quiet-button" aria-label="Save lesson snapshot" onClick={saveSnapshot}
+            disabled={!api || !frameId || running || reading || savingSnapshot || !program.source.trim() || (hasInk && !recognizedProgram)}
+            title={hasInk && !recognizedProgram ? 'Confirm the handwriting before saving.' : 'Save board, source, and input with local Git history.'}>
+            <Icon name="board" /><span>{savingSnapshot ? 'Saving…' : 'Snapshot'}</span></button>
           <button className="quiet-button" onClick={() => upload.current.click()} disabled={!api || running || reading}><Icon name="upload" /> <span>Open board</span></button>
           <button className="quiet-button" onClick={download} disabled={!api}><Icon name="download" /><span>Download</span></button>
           <input ref={upload} type="file" accept=".excalidraw,.json" hidden onChange={importBoard} />
@@ -292,7 +334,7 @@ function App() {
             {health && !health.available && <div className="runner-notice"><span>{health.message}</span><button onClick={checkHealth}>Check again</button></div>}
             {error && <div className="error-notice" role="alert">{error}</div>}
             {notice && <p className="notice" role="status">{notice}</p>}
-            <div className="result-tabs" role="tablist" aria-label="Run details">{[['output', 'Output'], ['handwriting', 'Handwriting'], ['source', 'Source & input'], ['library', 'Libraries']].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => id === 'library' ? viewLibrary() : setTab(id)}>{label}</button>)}</div>
+            <div className="result-tabs" role="tablist" aria-label="Run details">{[['output', 'Output'], ['handwriting', 'Handwriting'], ['source', 'Source & input'], ['library', 'Libraries'], ['history', 'History']].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => id === 'library' ? viewLibrary() : setTab(id)}>{label}</button>)}</div>
 
             <div className="result-body" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
               <div hidden={tab !== 'handwriting'}><HandwritingPanel ref={ocrPanel}
@@ -304,6 +346,11 @@ function App() {
                   setNotice('Transcription confirmed. Verify & run will compile exactly this reviewed code.');
                 }}
               /></div>
+              {tab === 'history' && <SnapshotHistory key={snapshotRevision} onOpen={(scene) => {
+                const ink = restoreBoard(scene);
+                setTab(ink ? 'handwriting' : 'source');
+                setNotice(ink ? 'Saved board opened. Review its handwriting again before running. The confirmed source is also stored in board.c.' : 'Saved board opened. Run it to verify the saved code.');
+              }} />}
               {tab === 'output' && <>
                 {stale && <div className="stale-notice">The board changed. Run again to update these results.</div>}
                 {!result && !running && <div className="empty-state"><div className="terminal-glyph">&gt;_</div><h3>Let the code do the talking.</h3><p>Output and line-by-line diagnostics will appear here after a run.</p><span>GCC · AddressSanitizer · UBSan</span></div>}

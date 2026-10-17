@@ -5,6 +5,7 @@ import { dirname, extname, resolve, sep } from 'node:path';
 import { sandboxHealth, runSandbox } from './sandbox.mjs';
 import { loadOcrEnvironment, ocrConfiguration, recognizeHandwriting, OCR_BODY_LIMIT } from './ocr.mjs';
 import { libraries } from '../src/libraries.js';
+import { createSnapshotStore, SNAPSHOT_BODY_LIMIT } from './snapshots.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = resolve(ROOT, 'dist');
@@ -41,7 +42,7 @@ export function validatePayload(body) {
 }
 
 export function createHandler({ run = runSandbox, health = sandboxHealth, now = Date.now,
-  recognize = recognizeHandwriting, ocrHealth = ocrConfiguration } = {}) {
+  recognize = recognizeHandwriting, ocrHealth = ocrConfiguration, snapshots = createSnapshotStore() } = {}) {
   let active = 0;
   let activeOcr = 0;
   let rate = { start: 0, count: 0 };
@@ -63,6 +64,14 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
     try {
       if (pathname === '/api/health' && req.method === 'GET') {
         return send(res, 200, { service: 'whiteboard-code-verifier', runner: await health(), ocr: ocrHealth() });
+      }
+      if (pathname === '/api/snapshots' && req.method === 'GET') return send(res, 200, { snapshots: await snapshots.list() });
+      if (pathname === '/api/snapshots' && req.method === 'POST') {
+        if (!req.headers['content-type']?.startsWith('application/json')) return send(res, 415, { error: 'Use application/json.' });
+        return send(res, 201, await snapshots.save(await requestBody(req, SNAPSHOT_BODY_LIMIT)));
+      }
+      if (pathname.startsWith('/api/snapshots/') && req.method === 'GET') {
+        return send(res, 200, { scene: await snapshots.read(pathname.slice('/api/snapshots/'.length)) });
       }
       if (req.method === 'GET' && libraries.some((library) => pathname === `/api/library/${library.file}`)) {
         const header = await readFile(resolve(ROOT, 'runner/lib', pathname.slice('/api/library/'.length)));

@@ -9,3 +9,4 @@ __pycache__/
 .npm-cache/
 test-results/
 playwright-report/
+snapshots/
