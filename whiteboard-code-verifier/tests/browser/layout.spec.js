@@ -7,6 +7,7 @@ test('fills the viewport, resizes the code panel with mouse and keyboard, and fo
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
   const canvas = page.locator('.canvas-container');
   const before = await canvas.boundingBox();
@@ -36,6 +37,7 @@ test('fills the viewport, resizes the code panel with mouse and keyboard, and fo
 
 test('initial code bounds contain every rendered glyph after the local font loads', async ({ page }, testInfo) => {
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download', exact: true }).click();
   const download = await downloadPromise;
@@ -53,6 +55,7 @@ test('initial code bounds contain every rendered glyph after the local font load
 
 test('resizes writing frames, contains a long program and stdin, and resizes the source editor', async ({ page }, testInfo) => {
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await page.getByLabel('Frame width', { exact: true }).fill('1200');
   await page.getByLabel('Frame height', { exact: true }).fill('900');
   await page.getByRole('button', { name: 'Apply size', exact: true }).click();
@@ -96,6 +99,7 @@ test('resizes writing frames, contains a long program and stdin, and resizes the
 
 test('enters and exits browser fullscreen without losing the board', async ({ page }) => {
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await page.getByRole('button', { name: 'Enter fullscreen', exact: true }).click();
   await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
   await page.getByRole('button', { name: 'Exit fullscreen', exact: true }).click();
@@ -106,6 +110,7 @@ test('enters and exits browser fullscreen without losing the board', async ({ pa
 
 test('browses curated headers and loads their examples onto the board', async ({ page }) => {
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await page.getByRole('tab', { name: 'Libraries', exact: true }).click();
   for (const library of libraries) {
     await page.getByLabel('CURATED C LIBRARIES').selectOption(library.file);

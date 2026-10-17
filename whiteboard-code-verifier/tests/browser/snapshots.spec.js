@@ -1,3 +1,4 @@
+import { selectWritingRegion } from './board-helpers.js';
 import { test, expect } from '@playwright/test';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,7 @@ const archive = fileURLToPath(new URL('../../test-results/lesson-snapshots/', im
 
 test('compares a committed teaching header with the current version without opening the board', async ({ page }) => {
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await page.getByRole('tab', { name: 'Source & input' }).click();
   await page.getByLabel(/CONFIRMED SOURCE/).fill('#include <queue.h>\nint main(void) { Queue q; queue_init(&q); queue_free(&q); return 0; }');
   const savedResponse = page.waitForResponse((response) => response.url().endsWith('/api/snapshots') && response.request().method() === 'POST');
@@ -25,6 +27,7 @@ test('saves literal lesson files with real Git history and reopens the saved boa
   let runs = 0;
   page.on('request', (request) => { if (request.url().endsWith('/api/run')) runs++; });
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await page.getByRole('tab', { name: 'Source & input', exact: true }).click();
   const source = '#include <stdio.h>\n\nint main(void) {\n    unknown_symbol;\n}\n';
   await page.getByLabel(/CONFIRMED SOURCE/).fill(source);
@@ -73,7 +76,9 @@ test('blocks unconfirmed or changed ink and saves teacher-corrected C without re
     })),
   } }));
   await page.goto('/');
-  await page.getByRole('button', { name: '+ New handwritten board' }).click();
+  await page.getByLabel('Demo lesson').selectOption('sum');
+  await page.getByRole('button', { name: '+ Blank canvas' }).click();
+  await selectWritingRegion(page);
   const area = await page.locator('.canvas-container').boundingBox();
   async function draw(offset = 0) {
     const x = area.x + area.width * .4 + offset, y = area.y + area.height * .45 + offset;

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('runs multiple inputs and accepts an expected runtime issue', async ({ page }) => {
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await page.getByRole('tab', { name: 'Source & input' }).click();
   await page.getByLabel(/CONFIRMED SOURCE/).fill('#include <stdio.h>\nint main(void) { int x; if (scanf("%d", &x) != 1) return 1; printf("%d\\n", x * 2); return 0; }');
   await page.getByRole('tab', { name: 'Cases' }).click();

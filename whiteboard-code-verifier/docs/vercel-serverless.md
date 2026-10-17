@@ -1,6 +1,6 @@
 # Run Boardroom on Vercel without your own Docker server
 
-This deployment uses Vercel Functions for the private API. Gemini reads black and blue handwriting; a configured [Wandbox](https://wandbox.org/) service compiles and runs C. The app never presents Gemini-generated output as a compiler result. Source and stdin are sent to Wandbox, so do not submit private classroom data as code or input. This is a different execution environment from the local Docker runner: its compiler version, sanitizer support, limits, and runtime diagnostics may differ.
+This deployment uses Vercel Functions for the private API. Gemini reads black and blue handwriting and provides all three pseudocode assistance levels; a configured [Wandbox](https://wandbox.org/) service compiles and runs C. The app never presents Gemini-generated output as a compiler result. Source and stdin are sent to Wandbox, so do not submit private classroom data as code or input. This is a different execution environment from the local Docker runner: its compiler version, sanitizer support, limits, and runtime diagnostics may differ.
 
 In the Vercel project, set the root directory to `whiteboard-code-verifier` and build with `npm run build`. Add these **server-side** environment variables in Project Settings → Environment Variables:
 

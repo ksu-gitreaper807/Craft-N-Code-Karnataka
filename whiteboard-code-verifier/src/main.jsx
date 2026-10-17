@@ -3,12 +3,12 @@ import { createRoot } from 'react-dom/client';
 import { Excalidraw, restoreElements } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { CODE_COLOR, INPUT_COLOR, extractProgram, framesIn, isOverlay, programSignature } from './board.js';
-import { addHandwritingFrame, clearOverlays, fitProgramFrame, focusSourceLine, lessonScene, replaceChannel, resizeProgramFrame, showDiagnostics } from './canvas.js';
+import { clearOverlays, fitProgramFrame, focusSourceLine, lessonScene, replaceChannel, resizeProgramFrame, showDiagnostics } from './canvas.js';
 import { handwritingChannels, inkFingerprint } from './handwriting.js';
 import HandwritingPanel from './HandwritingPanel.jsx';
 import { lessons } from './lessons.js';
 import { libraries } from './libraries.js';
-import { PSEUDOCODE_LEVELS, preparePseudocode } from './pseudocode.js';
+import { PSEUDOCODE_LEVELS } from './pseudocode.js';
 import FrameControls from './FrameControls.jsx';
 import WorkspaceLayout from './WorkspaceLayout.jsx';
 import SnapshotHistory from './SnapshotHistory.jsx';
@@ -55,11 +55,11 @@ function MemoryDiagram({ stdout }) {
 }
 
 function App() {
-  const initial = useMemo(() => lessonScene(lessons[0]), []);
+  const initial = useMemo(() => [], []);
   const [api, setApi] = useState(null);
   const [elements, setElements] = useState(initial);
-  const [frameId, setFrameId] = useState('lesson-frame');
-  const [lessonId, setLessonId] = useState('sum');
+  const [frameId, setFrameId] = useState('');
+  const [lessonId, setLessonId] = useState('');
   const [tab, setTab] = useState('output');
   const [health, setHealth] = useState(null);
   const [ocrHealth, setOcrHealth] = useState(null);
@@ -80,6 +80,9 @@ function App() {
   const [snapshotRevision, setSnapshotRevision] = useState(0);
   const [pseudoLevel, setPseudoLevel] = useState(1);
   const [pseudoDraft, setPseudoDraft] = useState(null);
+  const [phase, setPhase] = useState('');
+  const [geminiDiagnostic, setGeminiDiagnostic] = useState(null);
+  const selectingRegion = useRef(null);
   const upload = useRef(null);
   const ocrPanel = useRef(null);
   const currentSignature = useRef('');
@@ -93,7 +96,9 @@ function App() {
   const program = hasInk ? recognizedProgram ?? EMPTY_PROGRAM : typedProgram;
   const signature = programSignature(program, frameId);
   currentSignature.current = signature;
-  const stale = result && result.signature !== signature;
+  const stale = result && (result.signature !== signature || result.level !== pseudoLevel);
+  const currentDraft = pseudoDraft?.originalSignature === signature && pseudoDraft.level === pseudoLevel ? pseudoDraft : null;
+  const caseProgram = currentDraft && pseudoLevel > 1 ? { ...program, source: currentDraft.source, lineMap: [] } : program;
   const lesson = lessons.find((item) => item.id === lessonId);
   const selectedFrame = frames.find((frame) => frame.id === frameId);
   const library = libraries.find((item) => item.file === libraryFile);
@@ -144,12 +149,18 @@ function App() {
     // The scene array and stroke objects can retain their identities while being edited.
     setElements([...next]);
     const nextFrames = framesIn(next);
-    setFrameId((previous) => nextFrames.some((el) => el.id === previous) ? previous : (nextFrames[0]?.id ?? ''));
+    const newRegion = selectingRegion.current && nextFrames.find((el) => !selectingRegion.current.has(el.id));
+    if (newRegion) {
+      selectingRegion.current = null;
+      setFrameId(newRegion.id);
+      setNotice('Region selected. Black writing is code; blue writing inside this region is stdin.');
+    } else setFrameId((previous) => nextFrames.some((el) => el.id === previous) ? previous : (nextFrames[0]?.id ?? ''));
   }, []);
 
   function chooseLesson(id) {
     if (!api) return;
     const next = lessonScene(lessons.find((item) => item.id === id));
+    selectingRegion.current = null;
     api.updateScene({ elements: next });
     api.scrollToContent(next, { fitToContent: true, maxZoom: 1 });
     setFrameId('lesson-frame');
@@ -161,8 +172,24 @@ function App() {
     setNotice('Lesson loaded. Download your board before switching lessons to keep edits.');
   }
 
+  async function requestJson(path, body, timeoutMs) {
+    const abort = new AbortController();
+    controller.current = abort;
+    const timer = setTimeout(() => abort.abort(), timeoutMs);
+    try {
+      const response = await apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), signal: abort.signal });
+      const data = await response.json();
+      if (!response.ok) {
+        if (data.diagnostic) setGeminiDiagnostic(data.diagnostic);
+        throw new Error(data.error ?? `API returned HTTP ${response.status}.`);
+      }
+      return data;
+    } finally { clearTimeout(timer); controller.current = null; }
+  }
+
   async function run() {
-    if (!api || running || reading || (pseudoDraft && pseudoDraft.originalSignature === signature)) return;
+    if (!api || running || reading) return;
     setError('');
     setNotice('');
     setPanelVisible(true);
@@ -176,46 +203,63 @@ function App() {
       return;
     }
     const liveProgram = liveHasInk ? confirmedOcr.program : extractProgram(liveElements, frameId);
-    if (!liveProgram.source.trim()) { setError('Add black text inside a frame, or edit the source below.'); return; }
+    if (!liveProgram.source.trim()) { setError('Write code or an algorithm, then select its region from the top bar.'); return; }
     setRunning(true);
     setResult(null);
+    setPseudoDraft(null);
+    setGeminiDiagnostic(null);
     setTab('output');
     clearOverlays(api);
     const submittedSignature = programSignature(liveProgram, frameId);
     const submitted = { ...liveProgram };
-    const abort = new AbortController();
-    controller.current = abort;
-    const timeout = setTimeout(() => abort.abort(), 30_000);
+    const level = pseudoLevel;
+    let compiled = false;
+    const boardUnchanged = () => {
+      const scene = api.getSceneElements();
+      const channels = handwritingChannels(scene, frameId);
+      const ink = channels.code || channels.stdin;
+      if (ink && confirmedOcr?.fingerprint !== inkFingerprint(scene, frameId)) return false;
+      const live = ink ? confirmedOcr.program : extractProgram(scene, frameId);
+      return currentSignature.current === submittedSignature && programSignature(live, frameId) === submittedSignature;
+    };
+    async function compile(source, transformed) {
+      if (!boardUnchanged()) throw new Error('The board changed. Run again for the current selection; pending generated C was not compiled.');
+      setPhase('compiler');
+      const data = await requestJson('/api/run', { source, stdin: submitted.stdin }, 30_000);
+      compiled = true;
+      setResult({ ...data, signature: submittedSignature, source, stdin: submitted.stdin, transformed, level });
+      if (!transformed && boardUnchanged()) showDiagnostics(api, data.diagnostics, submitted.lineMap);
+      return data;
+    }
     try {
-      const response = await apiFetch('/api/run', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: submitted.source, stdin: submitted.stdin }), signal: abort.signal,
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? `Runner returned HTTP ${response.status}.`);
-      setResult({ ...data, signature: submittedSignature, source: submitted.source, stdin: submitted.stdin });
-      if (currentSignature.current === submittedSignature) showDiagnostics(api, data.diagnostics, submitted.lineMap);
-      checkHealth();
+      let originalResult;
+      if (level === 1) originalResult = await compile(submitted.source, false);
+      if (level === 1 && !ocrHealth?.available) {
+        setNotice('Original C compiled. Configure Gemini to receive code corrections and explanations.');
+        return;
+      }
+      setPhase('gemini');
+      const compilerOutput = originalResult ? [originalResult.compilerOutput, originalResult.stderr].filter(Boolean).join('\n') : '';
+      // Bound context by UTF-8 bytes; neither the API key nor scene images are sent here.
+      let context = compilerOutput;
+      while (new TextEncoder().encode(context).length > 16_384) context = context.slice(0, Math.floor(context.length * .8));
+      const draft = await requestJson('/api/pseudocode', { source: submitted.source, stdin: submitted.stdin, level, compilerOutput: context }, 65_000);
+      if (!boardUnchanged()) throw new Error('The board changed. Run again for the current selection; pending generated C was not compiled.');
+      setPseudoDraft({ ...draft, originalSignature: submittedSignature });
+      if (level > 1) await compile(draft.source, true);
     } catch (caught) {
-      setError(caught.name === 'AbortError' ? 'The request timed out. Check the API and try again.' : caught.message);
-      checkHealth();
-    } finally { clearTimeout(timeout); setRunning(false); controller.current = null; }
-  }
-
-  function preparePseudo() {
-    if (!api || hasInk || !program.source.trim()) return;
-    const prepared = preparePseudocode(program.source, pseudoLevel);
-    setPseudoDraft({ ...prepared, originalSignature: signature });
-    setError('');
-    setNotice('Review and edit the proposed C. Use it on the board before running.');
+      const message = caught.name === 'AbortError' ? 'The request timed out. Check the API and try again.' : caught.message;
+      setError(compiled && level === 1 ? `The original compiler result is shown. Gemini assistance: ${message}` : message);
+    } finally { setRunning(false); setPhase(''); checkHealth(); }
   }
 
   function usePseudoDraft() {
-    if (!pseudoDraft || pseudoDraft.originalSignature !== signature || !pseudoDraft.source.trim() || hasInk) return;
-    replaceChannel(api, frameId, program.codeIds, pseudoDraft.source, CODE_COLOR);
+    if (!currentDraft || hasInk) return;
+    replaceChannel(api, frameId, program.codeIds, currentDraft.source, CODE_COLOR);
     setPseudoDraft(null);
     setResult(null);
-    setNotice('Prepared C is on the board. Verify & run will compile exactly this source.');
+    setNotice('Gemini C is on the board. Level 1 compiles this code as written.');
+    setPseudoLevel(1);
   }
 
   function boardScene() {
@@ -269,8 +313,8 @@ function App() {
     if (data.type !== 'excalidraw' || !Array.isArray(data.elements) || data.elements.length > 2000) throw new Error('Choose an Excalidraw scene with at most 2,000 elements.');
     const restored = restoreElements(data.elements.filter((el) => !isOverlay(el)), null);
     const nextFrames = framesIn(restored);
-    if (!nextFrames.length) throw new Error('This board needs a frame. Create one in Excalidraw before importing.');
-    const nextFrameId = nextFrames.some((frame) => frame.id === data.verifier?.frameId) ? data.verifier.frameId : nextFrames[0].id;
+    const nextFrameId = nextFrames.some((frame) => frame.id === data.verifier?.frameId) ? data.verifier.frameId : nextFrames[0]?.id ?? '';
+    selectingRegion.current = null;
     api.updateScene({ elements: restored });
     if (data.files) api.addFiles(Object.values(data.files));
     api.scrollToContent(restored, { fitToContent: true, maxZoom: 1 });
@@ -318,16 +362,26 @@ function App() {
     focusSourceLine(api, program.lineMap[diagnostic.line - 1]);
   }
 
-  function newHandwrittenBoard() {
+  function newBlankBoard() {
     if (!api || reading || running) return;
-    setFrameId(addHandwritingFrame(api));
+    selectingRegion.current = null;
+    api.updateScene({ elements: [], appState: { selectedElementIds: {}, currentItemStrokeColor: CODE_COLOR } });
+    api.setActiveTool({ type: 'freedraw' });
+    setFrameId('');
     setLessonId('');
     setConfirmedOcr(null);
     setResult(null);
     setPseudoDraft(null);
     setError('');
-    setNotice('Write inside the new frame. Black ink is code; blue ink is program input.');
+    setNotice('Write anywhere. Then choose Select code & input and drag around the content to run.');
     setTab('handwriting');
+  }
+
+  function selectCodeRegion() {
+    if (!api || running || reading) return;
+    selectingRegion.current = new Set(framesIn(api.getSceneElements()).map((frame) => frame.id));
+    api.setActiveTool({ type: 'frame' });
+    setNotice('Drag around the code and any blue input to select a program region. Press Escape to cancel.');
   }
 
   function selectPen(color) {
@@ -342,6 +396,7 @@ function App() {
         <a className="brand" href="/" aria-label="Boardroom home"><span className="brand-mark"><Icon name="board" size={23} /></span><span>boardroom<span className="brand-dot">.</span></span></a>
         <div className="project-name"><span className="small-divider" />Whiteboard Code Verifier<span className="tag">EARLY BUILD</span></div>
         <div className="header-actions">
+          <button className="quiet-button region-button" aria-label="Select code and input" onClick={selectCodeRegion} disabled={!api || running || reading}><Icon name="code" /><span>Select code &amp; input</span></button>
           <button className="quiet-button" aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={toggleFullscreen}>⛶ <span>{fullscreen ? 'Exit fullscreen' : 'Fullscreen'}</span></button>
           <button className="quiet-button" aria-pressed={!panelVisible} onClick={() => setPanelVisible((visible) => !visible)}>{panelVisible ? 'Hide panel' : 'Show panel'}</button>
           <button className="quiet-button" aria-label="Save lesson snapshot" onClick={saveSnapshot}
@@ -363,7 +418,7 @@ function App() {
         <WorkspaceLayout focused={!panelVisible} onResize={refreshCanvas}>
           <section className="board-pane" aria-label="Interactive lesson whiteboard">
             <div className="handwriting-tools">
-              <button onClick={newHandwrittenBoard} disabled={!api || reading || running}>+ New handwritten board</button>
+              <button onClick={newBlankBoard} disabled={!api || reading || running}>+ Blank canvas</button>
               <button onClick={() => selectPen(CODE_COLOR)} disabled={!api || reading || running}><i className="ink code-ink" />Pen: code</button>
               <button onClick={() => selectPen(INPUT_COLOR)} disabled={!api || reading || running}><i className="ink input-ink" />Pen: input</button>
             </div>
@@ -381,13 +436,24 @@ function App() {
           <aside className="inspector" aria-label="Verification controls and results" hidden={!panelVisible}>
             <div className="run-heading"><div><span className="eyebrow">THE REALITY CHECK</span><h2>Run this lesson</h2></div><span className={`connection ${health?.available ? 'online' : ''}`} title={health?.message ?? 'Checking runner'}><i />{health ? (health.available ? 'Runner ready' : 'Runner offline') : 'Connecting'}</span></div>
             <label className="field-label" htmlFor="program-frame">PROGRAM FRAME</label>
-            <select id="program-frame" className="frame-select" value={frameId} disabled={running || reading} onChange={(event) => setFrameId(event.target.value)}>{!frames.length && <option value="">Create a frame on the board</option>}{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.name || 'Untitled program'}</option>)}</select>
-            <p className="lesson-description">{lesson?.description ?? 'Black text in the selected frame becomes your program. Blue text becomes its input.'}</p>
-            <button className="run-button" onClick={run} disabled={running || reading || !api || !frameId || !(hasInk && !recognizedProgram ? ocrHealth?.available : health?.available) || Boolean(pseudoDraft && pseudoDraft.originalSignature === signature)}><span className={running || reading ? 'spinner' : ''}>{!running && !reading && <Icon name="play" size={18} />}</span>{reading ? 'Reading handwriting…' : running ? 'Compiling & running…' : pseudoDraft && pseudoDraft.originalSignature === signature ? 'Review pseudocode draft' : hasInk && !recognizedProgram ? 'Read & review handwriting' : 'Verify & run'}{!running && !reading && <span className="run-button-hint">C →</span>}</button>
+            <select id="program-frame" className="frame-select" value={frameId} disabled={running || reading} onChange={(event) => setFrameId(event.target.value)}>{!frames.length && <option value="">Select code &amp; input from the top bar</option>}{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.name || 'Selected program'}</option>)}</select>
+            <p className="lesson-description">{lesson?.description ?? 'Write anywhere on the blank canvas, then drag a region with Select code & input. Black writing is code or an algorithm; blue writing is stdin.'}</p>
+            <div className="pseudocode-panel" aria-label="Pseudocode mode">
+              <label className="field-label" htmlFor="pseudocode-level">PSEUDOCODE LEVEL · {pseudoLevel}</label>
+              <input id="pseudocode-level" type="range" min="1" max="3" step="1" value={pseudoLevel} aria-label="Pseudocode level"
+                aria-valuetext={`Level ${pseudoLevel}: ${PSEUDOCODE_LEVELS[pseudoLevel - 1].label}`} disabled={running || reading}
+                onChange={(event) => { setPseudoLevel(Number(event.target.value)); setPseudoDraft(null); setGeminiDiagnostic(null); setError(''); }} />
+              <div className="pseudocode-stops" aria-hidden="true"><span>1 · Check</span><span>2 · Complete</span><span>3 · Algorithm</span></div>
+              <h3>{PSEUDOCODE_LEVELS[pseudoLevel - 1].label}</h3>
+              <p className="panel-help">{PSEUDOCODE_LEVELS[pseudoLevel - 1].description}</p>
+            </div>
+            <button className="run-button" onClick={run} disabled={running || reading || !api || !frameId || !(hasInk && !recognizedProgram ? ocrHealth?.available : health?.available) || (pseudoLevel > 1 && !ocrHealth?.available)}><span className={running || reading ? 'spinner' : ''}>{!running && !reading && <Icon name="play" size={18} />}</span>{reading ? 'Reading handwriting…' : running ? phase === 'gemini' ? 'Gemini is preparing C…' : 'Compiling & running…' : hasInk && !recognizedProgram ? 'Read & review handwriting' : pseudoLevel === 1 ? 'Verify & run' : pseudoLevel === 2 ? 'Correct & run' : 'Generate & run'}{!running && !reading && <span className="run-button-hint" aria-hidden="true">C →</span>}</button>
             {hasInk && <p className="handwriting-state">{recognizedProgram ? 'Handwriting reviewed. Ready to compile.' : 'Handwriting needs recognition and teacher confirmation.'}</p>}
+            {pseudoLevel > 1 && ocrHealth && !ocrHealth.available && <p className="runner-notice">Gemini is required at this level. {ocrHealth.message}</p>}
             {health && !health.available && <div className="runner-notice"><span>{health.message}</span><button onClick={checkHealth}>Check again</button></div>}
             {apiAuthRequired && <div className="api-access"><label className="field-label" htmlFor="api-access-token">API ACCESS TOKEN</label><input id="api-access-token" type="password" autoComplete="off" value={apiTokenDraft} placeholder={hasApiToken() ? 'Replace the current token' : 'Enter the token from your server'} onChange={(event) => setApiTokenDraft(event.target.value)} /><button className="quiet-button" onClick={() => { setApiToken(apiTokenDraft.trim()); setApiTokenDraft(''); checkHealth(); }}>Connect API</button></div>}
             {error && <div className="error-notice" role="alert">{error}</div>}
+            {error && geminiDiagnostic && <details className="raw-output"><summary>Gemini assistance diagnostics</summary><pre>{JSON.stringify(geminiDiagnostic, null, 2)}</pre><a href="https://aistudio.google.com/usage" target="_blank" rel="noreferrer">Check Gemini usage and limits</a></details>}
             {notice && <p className="notice" role="status">{notice}</p>}
             <div className="result-tabs" role="tablist" aria-label="Run details">{[['output', 'Output'], ['handwriting', 'Handwriting'], ['source', 'Source & input'], ['cases', 'Cases'], ['library', 'Libraries'], ['history', 'History']].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => id === 'library' ? viewLibrary() : setTab(id)}>{label}</button>)}</div>
 
@@ -398,11 +464,11 @@ function App() {
                 busy={reading || running} onBusy={setReading} onInvalidate={() => setConfirmedOcr(null)}
                 onConfirm={(confirmed) => {
                   setConfirmedOcr(confirmed); setResult(null); setTab('source');
-                  setNotice('Transcription confirmed. Verify & run will compile exactly this reviewed code.');
+                  setNotice('Transcription confirmed. Use the run button at your selected level to check, complete, or demonstrate it.');
                 }}
               /></div>
-              <div hidden={tab !== 'cases'}><TestCases program={program} signature={signature}
-                disabled={running || reading || !health?.available || !api || !frameId || !program.source.trim() || Boolean(pseudoDraft && pseudoDraft.originalSignature === signature)} onBusy={setRunning} /></div>
+              <div hidden={tab !== 'cases'}>{pseudoLevel > 1 && <p className="panel-help">First correct or generate C with the run button. Cases use that displayed C until the board or level changes.</p>}<TestCases program={caseProgram} signature={`${signature}:${pseudoLevel}:${caseProgram.source}`}
+                disabled={running || reading || !health?.available || !api || !frameId || !program.source.trim() || (pseudoLevel > 1 && !currentDraft)} onBusy={setRunning} /></div>
               {tab === 'history' && !snapshotAvailable && <p className="panel-help">Lesson history needs persistent storage. You can download this board from the top bar.</p>}
               {tab === 'history' && snapshotAvailable && <SnapshotHistory key={snapshotRevision} onOpen={(scene) => {
                 const ink = restoreBoard(scene);
@@ -412,36 +478,29 @@ function App() {
               {tab === 'output' && <>
                 {stale && <div className="stale-notice">The board changed. Run again to update these results.</div>}
                 {!result && !running && <div className="empty-state"><div className="terminal-glyph">&gt;_</div><h3>Let the code do the talking.</h3><p>Output and line-by-line diagnostics will appear here after a run.</p><span>C compiler · real output</span></div>}
-                {running && <div className="empty-state" role="status"><div className="terminal-glyph">…</div><h3>Testing the lesson</h3><p>Compiling C and checking the run.</p></div>}
+                {running && <div className="empty-state" role="status"><div className="terminal-glyph">…</div><h3>{phase === 'gemini' ? 'Preparing the lesson with Gemini' : 'Testing the lesson'}</h3><p>{phase === 'gemini' ? 'Reading your selected code or algorithm and preparing C.' : 'Compiling C and checking the run.'}</p></div>}
                 {result && <div aria-live="polite"><div className={`result-status ${result.status === 'success' ? 'passed' : 'failed'}`}><span>{result.status === 'success' ? '✓' : '!'}</span><strong>{labels[result.status] ?? result.status}</strong><small>{result.durationMs} ms</small></div>
                   <div className="terminal"><div className="terminal-title"><span>STDOUT</span><span>exit {result.exitCode ?? '—'}</span></div><pre>{result.stdout || '(no output)'}</pre></div>
                   <MemoryDiagram stdout={result.stdout} />
-                  {result.diagnostics.length > 0 && <div className="diagnostics"><h3>What the tools found</h3>{result.diagnostics.map((diagnostic, index) => <button key={index} className={`diagnostic ${diagnostic.severity}`} disabled={Boolean(stale)} onClick={() => focusDiagnostic(diagnostic)}><span className="line-number">L{diagnostic.line}</span><span><b>{diagnostic.kind} · {diagnostic.severity}</b>{diagnostic.message}</span><Icon name="arrow" size={14} /></button>)}</div>}
+                  {result.transformed && <p className="panel-help">This output comes from the Gemini C shown below. Diagnostic line numbers refer to that C.</p>}
+                  {result.diagnostics.length > 0 && <div className="diagnostics"><h3>What the tools found</h3>{result.diagnostics.map((diagnostic, index) => <button key={index} className={`diagnostic ${diagnostic.severity}`} disabled={Boolean(stale) || result.transformed} onClick={() => focusDiagnostic(diagnostic)}><span className="line-number">L{diagnostic.line}</span><span><b>{diagnostic.kind} · {diagnostic.severity}</b>{diagnostic.message}</span><Icon name="arrow" size={14} /></button>)}</div>}
                   {result.notes.map((note) => <article className="teaching-note" key={note.title}><span className="eyebrow">TEACHING NOTE</span><h3>{note.title}</h3><p>{note.body}</p></article>)}
                   {(result.stderr || result.compilerOutput) && <details className="raw-output"><summary>Full compiler & runtime messages</summary><pre>{[result.compilerOutput, result.stderr].filter(Boolean).join('\n')}</pre></details>}
                 </div>}
+                {currentDraft && <section className="pseudocode-review" aria-label="Gemini C proposal">
+                  <h3>{pseudoLevel === 1 ? 'Gemini correction · advice' : 'Gemini C · demonstration'}</h3>
+                  <p className="panel-help">{currentDraft.explanation}</p>
+                  {currentDraft.issues.length > 0 && <ul className="pseudocode-issues">{currentDraft.issues.map((issue, index) => <li key={index}>{issue.line ? `Original line ${issue.line}: ` : 'Assumption: '}{issue.message}</li>)}</ul>}
+                  <p className="panel-help">{pseudoLevel === 1 ? 'The original board code was compiled. This corrected source is a suggestion.' : 'The C below is sent to the compiler. Your writing stays on the board.'}</p>
+                  <pre className="library-source" aria-label={pseudoLevel === 1 ? 'Suggested C' : 'Generated C'}>{currentDraft.source}</pre>
+                  {!hasInk && <button className="quiet-button" onClick={usePseudoDraft} disabled={running || reading}>Use this C on board</button>}
+                  <p className="ocr-provenance">{currentDraft.provider} · {currentDraft.model} · {currentDraft.durationMs} ms</p>
+                </section>}
               </>}
               {tab === 'source' && <div className="source-panel">
-                <p className="panel-help">{hasInk ? 'Review changes in the Handwriting tab. The original strokes stay on the board.' : 'Edit here or use the canvas text tool. Changes here replace the selected frame’s black or blue text.'}</p>
+                <p className="panel-help">{!frameId ? 'Write on the canvas, then use Select code & input in the top bar to choose a region. You can then edit its source here.' : hasInk ? 'Review changes in the Handwriting tab. The original strokes stay on the board.' : 'Edit code or an algorithm here, or use the canvas text tool. The level slider controls how Gemini prepares it for execution.'}</p>
                 <label className="field-label" htmlFor="source-editor">CONFIRMED SOURCE · {program.lineMap.length} LINES</label>
                 <textarea id="source-editor" className="code-editor" value={program.source} spellCheck={false} readOnly={hasInk} disabled={running || reading || !frameId} onChange={(event) => { if (!hasInk) { setPseudoDraft(null); replaceChannel(api, frameId, program.codeIds, event.target.value, CODE_COLOR); } }} />
-                <div className="pseudocode-panel" aria-label="Pseudocode mode">
-                  <h3>Pseudocode mode</h3>
-                  <p className="panel-help">Each level adds more help. Prepare a draft, check every change, then place the C on the board. Nothing runs during preparation.</p>
-                  <label className="field-label" htmlFor="pseudocode-level">CORRECTION LEVEL</label>
-                  <select id="pseudocode-level" className="frame-select" value={pseudoLevel} disabled={running || reading || hasInk} onChange={(event) => setPseudoLevel(Number(event.target.value))}>{PSEUDOCODE_LEVELS.map((level) => <option key={level.value} value={level.value}>{level.label}</option>)}</select>
-                  <button className="quiet-button" onClick={preparePseudo} disabled={running || reading || hasInk || !program.source.trim()}>Prepare pseudocode</button>
-                  {hasInk && <p className="panel-help">Pseudocode mode currently edits typed code. Keep handwriting in the review flow.</p>}
-                  {pseudoDraft && <div className="pseudocode-review">
-                    {pseudoDraft.originalSignature !== signature && <p className="error-notice" role="alert">The board changed. Prepare a new draft before using it.</p>}
-                    <label className="field-label" htmlFor="pseudocode-draft">PROPOSED C · REVIEW AND EDIT</label>
-                    <textarea id="pseudocode-draft" className="code-editor" spellCheck={false} value={pseudoDraft.source} disabled={running || reading || pseudoDraft.originalSignature !== signature} onChange={(event) => setPseudoDraft({ ...pseudoDraft, source: event.target.value })} />
-                    {pseudoDraft.issues.length > 0 && <div className="pseudocode-issues"><strong>Check before running:</strong><ul>{pseudoDraft.issues.map((issue, index) => <li key={index}>Original line {issue.line}: {issue.message}</li>)}</ul></div>}
-                    <p className="panel-help">Using this draft replaces the selected frame’s black text. Save or download the original board first if you want to keep it.</p>
-                    <button className="quiet-button" onClick={usePseudoDraft} disabled={running || reading || hasInk || pseudoDraft.originalSignature !== signature || !pseudoDraft.source.trim()}>Use prepared code</button>
-                    <button className="quiet-button" onClick={() => setPseudoDraft(null)}>Discard draft</button>
-                  </div>}
-                </div>
                 <label className="field-label" htmlFor="stdin-editor">STANDARD INPUT · BLUE INK</label>
                 <textarea id="stdin-editor" className="input-editor" value={program.stdin} spellCheck={false} readOnly={hasInk} placeholder="No input: the program receives EOF." disabled={running || reading || !frameId} onChange={(event) => { if (!hasInk) { setPseudoDraft(null); replaceChannel(api, frameId, program.inputIds, event.target.value, INPUT_COLOR); } }} />
                 <span className="panel-help">{hasInk ? 'Compiler diagnostics map to approximate regions of the reviewed handwriting.' : 'Handwritten code uses the pen controls and a review step before execution.'}</span>

@@ -6,6 +6,7 @@ test('loads the canvas, edits source, and roundtrips a downloaded board', async 
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.getByRole('link', { name: 'Boardroom home' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
   await expect(page.locator('.excalidraw canvas').first()).toBeVisible();
@@ -37,6 +38,7 @@ test('loads the canvas, edits source, and roundtrips a downloaded board', async 
 test('fits a phone viewport without page-level horizontal scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole('tab', { name: 'Source & input' }).click();
@@ -53,6 +55,7 @@ test.describe('real Docker execution', () => {
   for (const lesson of lessons) {
     test(`${lesson.title}: canvas to real program result`, async ({ page }) => {
       await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
       await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
       await page.getByLabel('Demo lesson').selectOption(lesson.id);
       const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/run'));
@@ -73,6 +76,7 @@ test.describe('real Docker execution', () => {
 
   test('highlights a compiler error and marks edited results stale', async ({ page }, testInfo) => {
     await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
     await page.getByRole('tab', { name: 'Source & input' }).click();
     await page.getByLabel(/CONFIRMED SOURCE/).fill('int main(void) {\n    unknown_symbol;\n}\n');
     await page.getByRole('button', { name: 'Verify & run' }).click();

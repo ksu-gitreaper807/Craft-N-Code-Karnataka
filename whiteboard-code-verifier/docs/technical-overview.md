@@ -4,7 +4,7 @@ This document describes the implementation currently in `whiteboard-code-verifie
 
 ## 1. Purpose and target user
 
-Boardroom is an executable digital whiteboard for teachers explaining C programming. A teacher writes or types a program inside a whiteboard frame, supplies input in blue, and runs the program without moving the lesson into a separate IDE. Compiler messages and runtime diagnostics point back to locations on the board.
+Boardroom is an executable digital whiteboard for teachers explaining C programming. A teacher writes or types on a blank canvas, selects a code/input region from the top bar, supplies input in blue, and runs the program without moving the lesson into a separate IDE. Compiler messages and runtime diagnostics point back to locations on the board.
 
 The teaching goal is to make classroom examples verifiable: demonstrate working code, expose syntax and memory mistakes, and connect abstractions to their implementation. The current input is an Excalidraw canvas. A camera pipeline for physical whiteboards is outside the implemented scope.
 
@@ -28,32 +28,31 @@ The teaching goal is to make classroom examples verifiable: demonstrate working 
 
 Frontend dependencies are pinned in `package.json` and `package-lock.json`. The Dockerfile pins a compiler image tag, rather than an immutable image digest. Node's API and the Python runner use built-in modules; there is no Express server or Gemini SDK dependency. The backend calls Gemini through `fetch` and its REST API.
 
-The Vercel deployment also includes same-origin Functions for health, OCR, and C execution. They require a teacher access token. Vercel has no persistent Docker or Git archive, so its C compiler is an explicitly configured third-party Wandbox service and its Snapshot/History actions are unavailable. See [Vercel serverless deployment](vercel-serverless.md). The Docker implementation below remains the full local/persistent-server mode; its sanitizers and resource limits do not describe the hosted compiler.
+The Vercel deployment also includes same-origin Functions for health, OCR, Gemini pseudocode assistance, and C execution. They require a teacher access token. Vercel has no persistent Docker or Git archive, so its C compiler is an explicitly configured third-party Wandbox service and its Snapshot/History actions are unavailable. See [Vercel serverless deployment](vercel-serverless.md). The Docker implementation below remains the full local/persistent-server mode; its sanitizers and resource limits do not describe the hosted compiler.
 
 ## 3. Architecture and data flow
 
 ```mermaid
 flowchart TD
-    A[Teacher writes inside an Excalidraw frame] --> B{Input channel contains handwriting?}
-    B -->|No| C[Extract exact typed text and line geometry]
-    B -->|Yes| D[Capture separate code and input PNGs]
-    D --> E[Node API sends images to Gemini]
-    E --> F[Validate structured transcription]
-    F --> G[Teacher edits and confirms the transcription]
-    C --> H[Teacher selects Verify and run]
-    G --> H
-    H --> I[Node API validates source and input]
-    I --> J[Disposable Docker container]
-    J --> K[Python invokes GCC, then the compiled program]
-    K --> L[Output, diagnostics, and teaching notes]
-    L --> M[React displays results and highlights board lines]
+    A[Teacher writes on a blank canvas] --> B[Select code and input region]
+    B --> C{Contains handwriting?}
+    C -->|No| D[Extract literal typed text]
+    C -->|Yes| E[Gemini OCR then teacher confirmation]
+    D --> F[Select level and click run]
+    E --> F
+    F --> G{Pseudocode level}
+    G -->|1| H[Compile original C and ask Gemini for advice]
+    G -->|2 or 3| I[Gemini completes C or translates an algorithm]
+    I --> J[Compile displayed Gemini C]
+    H --> K[Real output and compiler diagnostics]
+    J --> K
 ```
 
 The browser owns the working scene and its review state. The Node process owns credentials and coordinates external services. The container owns compilation and execution. Gemini receives relevant image crops; it does not decide whether a program is correct. GCC and runtime tools supply the execution evidence.
 
 ## 4. Whiteboard and source extraction
 
-One Excalidraw frame represents one program. The teacher selects which frame to verify.
+The initial scene is empty. **Select code & input** activates Excalidraw’s native frame tool, allowing the teacher to drag around existing code and optional blue stdin. The new frame becomes the selected program; writing outside it remains excluded. Demo lessons remain available through the lesson selector.
 
 The workspace fills the browser viewport beneath compact controls. Browser fullscreen and a hideable side panel provide more drawing space. The panel divider supports pointer dragging and keyboard resizing. Writing frames have explicit width/height controls, a **More room** action, and **Fit frame** navigation. Editing typed source in the side panel grows the frame to contain the program and positions typed stdin below it. Shrinking cannot clip existing frame contents. The source textarea also supports vertical resizing.
 
@@ -65,9 +64,11 @@ For typed text, `src/board.js` orders text elements by position and preserves th
 
 For handwritten channels, `src/capture.js` exports the relevant strokes and any text in that same channel. Code and stdin are captured separately, with padding and a white background. Frame borders and verifier overlays are excluded. Exported images are scaled to a maximum dimension of 1,800 pixels; the API accepts PNGs up to 2,048 × 2,048.
 
-### Pseudocode preparation
+### Gemini pseudocode levels
 
-The Source & input panel has three opt-in correction levels: finish obvious C statements, wrap snippets as programs, and translate a small set of classroom shorthand. Level 3 covers integer variables/input/output, conditionals, counted and while loops, and increments/decrements of declared variables. `src/pseudocode.js` creates a local proposal and warnings. The teacher can edit the proposal and must explicitly place it on the board before the normal Verify & run action. This keeps the submitted C visible and lets compiler diagnostics map to the final board text. The original shorthand is replaced only after that action; teachers can save or download it first. Changing the board invalidates a pending proposal. This path is currently available for typed code; handwritten code still requires OCR review. No Gemini request or automatic execution occurs during preparation. Unrecognized shorthand remains visible as unfinished text, and integer input/output assumptions are flagged for review.
+`src/pseudocode.js` defines a three-stop slider. Level 1 compiles original C and then asks Gemini for corrections using source and compiler context. Level 2 completes near-C, including missing boilerplate and punctuation. Level 3 translates an algorithm or prose into a small C demonstration. Levels 2–3 compile the validated Gemini source automatically after the explicit run action and display it with real compiler results. Original board content remains intact. Typed users can explicitly apply the displayed C to the board.
+
+`server/pseudocode.mjs` uses the same Gemini Interactions API, key, and model as OCR. It enforces input/output bounds, validates structured C/explanation/issue fields, and logs only safe duration, quota, and token metadata. `server/gemini-response.mjs` shares bounded response parsing and quota classification with OCR. Both local `/api/pseudocode` and the authenticated Vercel function prepare C without executing it. The browser uses the separate `/api/run` endpoint for execution. Handwritten source must first be transcribed and confirmed. Scene fingerprints prevent a changed board from launching pending generated C; changing the level marks previous output stale. Generated C has its own line numbers and never highlights unrelated board lines. Cases at Levels 2–3 uses the current generated source.
 
 ## 5. OCR and teacher review
 
@@ -195,6 +196,6 @@ Development serves the frontend at `http://127.0.0.1:5173` and the API at `http:
 | `npm run test:ocr -- tests/fixtures/ocr/synthetic-code.png` | Opt-in live Gemini request; prints unconfirmed text without executing it |
 | `npm run benchmark:ocr -- /path/to/private/manifest.json` | Opt-in live Gemini measurements against private classroom samples |
 
-Implementation verification passed 70 Node/Python tests and 30 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public and committed header browsing, multiple input cases, all six examples, and saving/reopening real Git-backed snapshots. Snapshot failure cases preserve written files and unrelated staged application changes. The browser suite stubs OCR responses explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
+Implementation verification passed 73 Node/Python tests and 38 browser tests; the unchanged Docker runner previously passed 14 dedicated checks. Coverage includes pointer/keyboard panel resizing, browser fullscreen, a 151-line program with input contained in its expanded frame, public and committed header browsing, multiple input cases, all six examples, and saving/reopening real Git-backed snapshots. Snapshot failure cases preserve written files and unrelated staged application changes. The browser suite stubs OCR and Gemini code assistance explicitly, while using real Docker execution. A separate live Gemini check faithfully transcribed a seven-line synthetic handwriting-style sample, including its intentional missing `&` and semicolon. A live browser check also exercised capture, Gemini, teacher correction/confirmation, and Docker execution with stdout `3`.
 
-These results establish the working integration. The new benchmark command computes character, line, and critical-symbol errors from private sample images and gold transcriptions, plus optional teacher-reported correction time; no genuine classroom samples have been provided or measured. Other material limits are restricted includes, approximate handwriting highlights, a limited deterministic pseudocode vocabulary, browser-session-only input cases, no collaboration or individual authentication, and no public multi-tenant deployment. Caveman gateway observability is not connected in the current implementation.
+These results establish the working integration. The new benchmark command computes character, line, and critical-symbol errors from private sample images and gold transcriptions, plus optional teacher-reported correction time; no genuine classroom samples have been provided or measured. Other material limits are restricted includes, approximate handwriting highlights, unbenchmarked Gemini code-generation quality, browser-session-only input cases, no collaboration or individual authentication, and no public multi-tenant deployment. Caveman gateway observability is not connected in the current implementation.

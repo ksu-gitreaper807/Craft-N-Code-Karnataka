@@ -36,6 +36,22 @@ function post(base, payload, options = {}) {
   });
 }
 
+test('pseudocode API preserves payload, authenticates, bounds uploads and never executes a program', async (t) => {
+  let received;
+  const base = await start(t, { apiToken: 'test-private-token',
+    run: async () => { throw new Error('Must not run during Gemini preparation'); },
+    assist: async (body) => { received = body; return { source: 'int main(void) {}', level: body.level }; } });
+  const body = JSON.stringify({ source: 'print 5', stdin: '1\n', level: 3 });
+  const invoke = (extra = {}) => base('/api/pseudocode', { method: 'POST', body,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-private-token' }, ...extra });
+  assert.equal((await invoke({ headers: { 'Content-Type': 'application/json' } })).status, 401);
+  const response = await invoke();
+  assert.equal(response.status, 200);
+  assert.deepEqual(received, JSON.parse(body));
+  assert.equal((await invoke({ body: 'x'.repeat(65_537) })).status, 413);
+  assert.equal((await invoke({ headers: { Authorization: 'Bearer test-private-token', Origin: 'https://foreign.example' } })).status, 403);
+});
+
 test('rejects invalid and oversized code/input before entering the runner', () => {
   assert.ok(validatePayload(null));
   assert.ok(validatePayload({ source: ' ' }));

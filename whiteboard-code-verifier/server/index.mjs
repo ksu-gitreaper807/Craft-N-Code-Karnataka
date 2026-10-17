@@ -7,6 +7,7 @@ import { sandboxHealth, runSandbox } from './sandbox.mjs';
 import { loadOcrEnvironment, ocrConfiguration, recognizeHandwriting, OCR_BODY_LIMIT } from './ocr.mjs';
 import { libraries } from '../src/libraries.js';
 import { createSnapshotStore, SNAPSHOT_BODY_LIMIT } from './snapshots.mjs';
+import { assistPseudocode, PSEUDOCODE_BODY_LIMIT } from './pseudocode.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = resolve(ROOT, 'dist');
@@ -43,7 +44,7 @@ export function validatePayload(body) {
 }
 
 export function createHandler({ run = runSandbox, health = sandboxHealth, now = Date.now,
-  recognize = recognizeHandwriting, ocrHealth = ocrConfiguration, snapshots = createSnapshotStore(),
+  recognize = recognizeHandwriting, assist = assistPseudocode, ocrHealth = ocrConfiguration, snapshots = createSnapshotStore(),
   appOrigin = process.env.BOARDROOM_APP_ORIGIN, apiHost = process.env.BOARDROOM_API_HOST,
   apiToken = process.env.BOARDROOM_API_TOKEN } = {}) {
   if ((appOrigin || apiHost) && !apiToken) throw new Error('BOARDROOM_API_TOKEN is required when exposing the API to a hosted frontend.');
@@ -108,14 +109,17 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         return res.end(header);
       }
-      if (pathname === '/api/ocr' && req.method === 'POST') {
+      if (['/api/ocr', '/api/pseudocode'].includes(pathname) && req.method === 'POST') {
         if (!req.headers['content-type']?.startsWith('application/json')) return send(res, 415, { error: 'Use application/json.' });
-        if (activeOcr >= 1) return send(res, 429, { error: 'A handwriting request is already running. Try again shortly.' });
+        if (activeOcr >= 1) return send(res, 429, { error: 'A Gemini request is already running. Try again shortly.' });
         if (now() - ocrRate.start >= 60_000) ocrRate = { start: now(), count: 0 };
-        if (ocrRate.count >= 6) return send(res, 429, { error: 'Handwriting request limit reached. Try again in a minute.' });
+        if (ocrRate.count >= 6) return send(res, 429, { error: 'Gemini request limit reached. Try again in a minute.' });
         activeOcr += 1;
         ocrRate.count += 1;
-        try { return send(res, 200, await recognize(await requestBody(req, OCR_BODY_LIMIT))); }
+        try {
+          const pseudocode = pathname === '/api/pseudocode';
+          return send(res, 200, await (pseudocode ? assist : recognize)(await requestBody(req, pseudocode ? PSEUDOCODE_BODY_LIMIT : OCR_BODY_LIMIT)));
+        }
         finally { activeOcr -= 1; }
       }
       if (pathname === '/api/run' && req.method === 'POST') {
@@ -153,7 +157,7 @@ export function createHandler({ run = runSandbox, health = sandboxHealth, now = 
       send(res, error.status ?? (error.code === 'ENOENT' ? 404 : 502), {
         error: error.code === 'ENOENT' ? 'Frontend not built. Run npm run build or use npm run dev.' : error.message,
         ...(error.code?.startsWith('ocr_') || error.code === 'invalid_ocr_response' || error.code === 'invalid_ocr_request' ? { code: error.code } : {}),
-        ...(error.ocrDiagnostic ? { diagnostic: error.ocrDiagnostic } : {}),
+        ...(error.ocrDiagnostic || error.diagnostic ? { diagnostic: error.ocrDiagnostic ?? error.diagnostic } : {}),
       });
     }
   };

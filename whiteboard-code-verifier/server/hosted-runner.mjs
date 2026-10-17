@@ -5,6 +5,8 @@ const HEADER_URLS = {
   'linked_list.h': new URL('../runner/lib/linked_list.h', import.meta.url),
   'queue.h': new URL('../runner/lib/queue.h', import.meta.url),
   'search.h': new URL('../runner/lib/search.h', import.meta.url),
+  // Curated headers include this shared contract implementation.
+  'board_contract.h': new URL('../runner/lib/board_contract.h', import.meta.url),
 };
 const MAX_OUTPUT = 16_384;
 

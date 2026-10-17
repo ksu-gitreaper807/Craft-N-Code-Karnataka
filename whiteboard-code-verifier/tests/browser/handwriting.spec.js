@@ -1,3 +1,4 @@
+import { selectWritingRegion } from './board-helpers.js';
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { lessons } from '../../src/lessons.js';
@@ -9,6 +10,10 @@ const fixtureLine = (text, index, extra = {}) => ({
 });
 
 async function configureProviderFixture(page) {
+  await page.route('**/api/pseudocode', (route) => route.fulfill({ json: {
+    source: route.request().postDataJSON().source, level: 1, explanation: 'Provider fixture.', issues: [],
+    provider: 'test-fixture', model: 'fixture-only', durationMs: 1,
+  } }));
   const response = await page.request.get('/api/health');
   const data = await response.json();
   expect(data.runner.available, data.runner.message).toBe(true);
@@ -43,8 +48,10 @@ test('captures pen ink, requires edited teacher confirmation, then runs the conf
     } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: '+ New handwritten board' }).click();
-  await expect(page.getByLabel('PROGRAM FRAME', { exact: true })).toContainText('Handwritten program');
+  await page.getByLabel('Demo lesson').selectOption('sum');
+  await page.getByRole('button', { name: '+ Blank canvas' }).click();
+  await selectWritingRegion(page);
+  await expect(page.getByLabel('PROGRAM FRAME', { exact: true })).toContainText('Selected program');
   await drawStroke(page);
   await expect(page.getByRole('button', { name: 'Read & review handwriting' })).toBeEnabled();
   await page.getByRole('button', { name: 'Read & review handwriting' }).click();
@@ -82,6 +89,7 @@ test('captures blue handwriting separately while preserving exact typed code', a
       requiresConfirmation: true, code: [], stdin: [fixtureLine('3 5', 0)] } });
   });
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await page.getByRole('button', { name: 'Pen: input', exact: true }).click();
   await drawStroke(page);
   await page.getByRole('button', { name: 'Read & review handwriting' }).click();
@@ -101,7 +109,9 @@ test('shows a provider failure without executing unreviewed code', async ({ page
   page.on('request', (request) => { if (request.url().endsWith('/api/run')) runs += 1; });
   await page.route('**/api/ocr', (route) => route.fulfill({ status: 502, json: { error: 'Gemini rejected the API key or model access. (HTTP 403)' } }));
   await page.goto('/');
-  await page.getByRole('button', { name: '+ New handwritten board' }).click();
+  await page.getByLabel('Demo lesson').selectOption('sum');
+  await page.getByRole('button', { name: '+ Blank canvas' }).click();
+  await selectWritingRegion(page);
   await drawStroke(page);
   await page.getByRole('button', { name: 'Read & review handwriting' }).click();
   await expect(page.getByRole('alert')).toContainText('HTTP 403');
@@ -122,7 +132,9 @@ for (const scenario of [
       diagnostic: { provider: 'gemini', quotaStatus: scenario.quotaStatus, httpStatus: scenario.status === 429 ? 429 : null },
     } }));
     await page.goto('/');
-    await page.getByRole('button', { name: '+ New handwritten board' }).click();
+  await page.getByLabel('Demo lesson').selectOption('sum');
+    await page.getByRole('button', { name: '+ Blank canvas' }).click();
+  await selectWritingRegion(page);
     await drawStroke(page);
     await page.getByRole('button', { name: 'Read & review handwriting' }).click();
     await expect(page.getByRole('alert')).toHaveText(scenario.error);
@@ -143,7 +155,9 @@ test('ink changed during recognition cannot be confirmed or executed', async ({ 
       code: [fixtureLine('int main(void) { return 0; }', 0)], stdin: [], requiresConfirmation: true } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: '+ New handwritten board' }).click();
+  await page.getByLabel('Demo lesson').selectOption('sum');
+  await page.getByRole('button', { name: '+ Blank canvas' }).click();
+  await selectWritingRegion(page);
   await drawStroke(page);
   const requestPromise = page.waitForRequest('**/api/ocr');
   await page.getByRole('button', { name: 'Read & review handwriting' }).click();
@@ -163,7 +177,9 @@ test('confirmed OCR compiler errors map to the ink and downloads retain the revi
     code: ['int main(void) {', '    return missing_value;', '}'].map((text, index) => fixtureLine(text, index)), stdin: [],
   } }));
   await page.goto('/');
-  await page.getByRole('button', { name: '+ New handwritten board' }).click();
+  await page.getByLabel('Demo lesson').selectOption('sum');
+  await page.getByRole('button', { name: '+ Blank canvas' }).click();
+  await selectWritingRegion(page);
   await drawStroke(page);
   await page.getByRole('button', { name: 'Read & review handwriting' }).click();
   await expect(page.getByLabel('Code line 2', { exact: true })).toHaveValue('    return missing_value;');

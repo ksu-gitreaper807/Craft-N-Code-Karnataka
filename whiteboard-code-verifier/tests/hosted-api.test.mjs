@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import health from '../api/health.js';
 import ocr from '../api/ocr.js';
+import pseudocode from '../api/pseudocode.js';
 
 async function call(handler, { method = 'GET', body, token = 'test-secret', origin = 'https://board-of-c.vercel.app' } = {}) {
   const req = { method, body, headers: { host: 'board-of-c.vercel.app', origin,
@@ -39,6 +40,19 @@ test('hosted OCR rejects malformed images without contacting Gemini', async () =
     const response = await call(ocr, { method: 'POST', body: { code: 'not-an-image' } });
     assert.equal(response.status, 400);
     assert.match(response.data.error, /PNG images/);
+  } finally {
+    if (previous === undefined) delete process.env.BOARDROOM_API_TOKEN;
+    else process.env.BOARDROOM_API_TOKEN = previous;
+  }
+});
+
+test('hosted pseudocode requires authorization and rejects invalid levels without contacting Gemini', async () => {
+  const previous = process.env.BOARDROOM_API_TOKEN;
+  try {
+    process.env.BOARDROOM_API_TOKEN = 'test-secret';
+    assert.equal((await call(pseudocode, { method: 'POST', token: 'wrong', body: { source: 'print 5', level: 3 } })).status, 401);
+    assert.equal((await call(pseudocode, { method: 'POST', body: { source: 'print 5', level: 4 } })).status, 400);
+    assert.equal((await call(pseudocode)).status, 405);
   } finally {
     if (previous === undefined) delete process.env.BOARDROOM_API_TOKEN;
     else process.env.BOARDROOM_API_TOKEN = previous;

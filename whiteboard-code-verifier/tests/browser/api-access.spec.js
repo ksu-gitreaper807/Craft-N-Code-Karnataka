@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 test('a static frontend explains the missing API and keeps board editing available', async ({ page }) => {
   await page.route('**/api/health', (route) => route.fulfill({ status: 404, body: '<html>Not found</html>', contentType: 'text/html' }));
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.locator('.inspector > .runner-notice span')).toContainText('Boardroom API endpoint is missing.');
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Save lesson snapshot' })).toBeDisabled();
@@ -17,6 +18,7 @@ test('an unconfigured Vercel Function shows the missing setting', async ({ page 
   await page.route('**/api/health', (route) => route.fulfill({ status: 503,
     json: { error: 'Set BOARDROOM_API_TOKEN in the Vercel project settings and redeploy.' } }));
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.locator('.inspector > .runner-notice span')).toContainText('Set BOARDROOM_API_TOKEN');
 });
 
@@ -28,6 +30,7 @@ test('a hosted API access token is entered at runtime and sent on reconnect', as
     return route.fulfill({ json: { runner: { available: true }, ocr: { available: false, message: 'No Gemini key.' } } });
   });
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.getByLabel('API ACCESS TOKEN')).toBeVisible();
   await page.getByLabel('API ACCESS TOKEN').fill('private-test-token');
   await page.getByRole('button', { name: 'Connect API' }).click();
@@ -41,6 +44,7 @@ test('a serverless API keeps C and handwriting available while explaining histor
     snapshots: { available: false },
   } }));
   await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.getByText('Runner ready')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save lesson snapshot' })).toBeDisabled();
   await page.getByRole('tab', { name: 'History' }).click();

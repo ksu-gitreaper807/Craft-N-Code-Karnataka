@@ -50,6 +50,6 @@ export function apiError(res, error) {
   sendJson(res, error.status ?? 502, {
     error: error instanceof SyntaxError ? 'Send valid JSON.' : error.message,
     ...(error.code ? { code: error.code } : {}),
-    ...(error.ocrDiagnostic ? { diagnostic: error.ocrDiagnostic } : {}),
+    ...(error.ocrDiagnostic || error.diagnostic ? { diagnostic: error.ocrDiagnostic ?? error.diagnostic } : {}),
   });
 }
