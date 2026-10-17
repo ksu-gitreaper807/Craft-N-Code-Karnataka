@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "compilerImage": "gcc:14.2.0-bookworm@sha256:b99b86a28812b1e6453a231a947dc43d76fe192788a12f344a9b568bf9f5d24c",
+  "language": "python",
+  "files": {
+    ".dockerignore": "3a19eeb0d4803b23efe8ed48165469ea646edb75463e9b8198a32cfca71ecb72",
+    "board.excalidraw": "cb3a9179c1f818abfd7a95d09fa66b6c2e3da68188562304b72a98208e2f84dc",
+    "board.py": "67efede04b0617b49c98d42a2cfef42a4105dabc8c6849c1389fe0d341c020ac",
+    "build.sh": "9c433876a8f4fa2dcbc2aae60ee280f47213942c98ad8c533cf69901b5801d44",
+    "Dockerfile": "86aa0c31d0412fd61a0627cbb468931bce4cd2dfc199e894dd757d37c63528c3",
+    "input.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "replay.py": "ca584a6aa659036edf4b23d1156c2eb3b5cd4cb5dd7f8ac86eb9e279ef58e938",
+    "result.json": "c6a17183429bf99bd3f240d2eaad7ffb525c9ba6cfb088279bae5bf3f3c598e4",
+    "runner.py": "d10844946bac2ee74a405316d591ec8a78feb370a3fc35c71d16054d23a63623"
+  }
+}
