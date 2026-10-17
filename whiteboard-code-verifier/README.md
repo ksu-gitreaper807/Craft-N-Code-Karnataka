@@ -20,6 +20,13 @@ See the [technical stack and project overview](docs/technical-overview.md) for t
 - Rule-based teaching notes and downloadable/importable Excalidraw scenes. Downloads include the current result when it still matches the board.
 - Dated lesson snapshots containing the scene, selected program's C source, and stdin, with local Git commits and a History tab.
 
+## Layout and tools (anand-changes branch)
+
+- A left tool rail (pens, **Region**, **Whole page**, **Snippet mode**), the board in the middle, and a resizable dock underneath. The dock holds an editable **Code that runs** view, standard input, and Output / Handwriting / Libraries / History tabs.
+- **Region** lets the teacher drag a box on the board. The box becomes a new frame ("Region n") holding the ink inside it, so arrows, flowcharts and side notes outside it never reach OCR or the compiler. **Whole page** frames all ink at once.
+- **Snippet mode** wraps the board text in a saved template (headers, globals, helper functions, `main()`), built by clicking or dragging blocks. The full program is always shown in the editor before it runs. Text that already contains `main(` runs as written. The template is stored in the browser (`localStorage`).
+- Compiler errors are underlined in the **Code that runs** editor, which is the exact text that was compiled and can be edited. The board itself is never marked. Edits in the editor do not change the board text.
+
 ## Run locally
 
 Prerequisites: Node.js 22.12+, Git for lesson history, and Linux Docker Engine with a working daemon. GCC runs **inside Docker**; the application never falls back to executing submitted programs on the host.

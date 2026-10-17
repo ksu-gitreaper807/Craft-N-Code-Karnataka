@@ -84,6 +84,45 @@ export function fitProgramFrame(api, frameId) {
   if (frame) api.scrollToContent(frame, { fitToContent: true, maxZoom: 1 });
 }
 
+const isInk = (el) => !el.isDeleted && !isOverlay(el) && ['freedraw', 'text'].includes(el.type);
+// An element belongs to a region when its centre is inside it, so a stray edge stroke is not pulled in.
+const centreIn = (el, rect) => {
+  const x = el.x + el.width / 2;
+  const y = el.y + el.height / 2;
+  return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+};
+
+export function describeRegion(api, rect) {
+  const members = api.getSceneElements().filter((el) => isInk(el) && centreIn(el, rect));
+  return { strokes: members.filter((el) => el.type === 'freedraw').length, texts: members.filter((el) => el.type === 'text').length };
+}
+
+export function inkBounds(api, padding = 32) {
+  const ink = api.getSceneElements().filter(isInk);
+  if (!ink.length) return null;
+  const [left, top, right, bottom] = getCommonBounds(ink);
+  return { x: left - padding, y: top - padding, width: right - left + 2 * padding, height: bottom - top + 2 * padding };
+}
+
+// A selected region becomes its own frame, so every later step keeps working on "one frame = one program".
+export function createRegionFrame(api, rect) {
+  const current = api.getSceneElements();
+  const members = current.filter((el) => isInk(el) && centreIn(el, rect));
+  const number = current.filter((el) => el.type === 'frame' && String(el.name ?? '').startsWith('Region')).length + 1;
+  const id = `region-${crypto.randomUUID()}`;
+  const [frame] = convertToExcalidrawElements([{
+    type: 'frame', id, name: `Region ${number}`, children: [], x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+  }], { regenerateIds: false });
+  const sized = { ...frame, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  const moved = members.map((el) => ({
+    ...el, frameId: id, version: el.version + 1, versionNonce: Math.floor(Math.random() * 2 ** 31), updated: Date.now(),
+  }));
+  // Children precede their frame in the element list.
+  api.updateScene({ elements: [...current.filter((el) => !members.includes(el)), ...moved, sized] });
+  api.setActiveTool({ type: 'selection' });
+  return { id, strokes: members.filter((el) => el.type === 'freedraw').length, texts: members.filter((el) => el.type === 'text').length };
+}
+
 export function addHandwritingFrame(api) {
   const current = api.getSceneElements();
   const frames = current.filter((el) => el.type === 'frame');

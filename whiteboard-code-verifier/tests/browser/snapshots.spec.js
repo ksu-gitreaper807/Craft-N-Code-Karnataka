@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { boardFile, importBoard } from './helpers.js';
 
 const archive = fileURLToPath(new URL('../../test-results/lesson-snapshots/', import.meta.url));
 
@@ -9,9 +10,10 @@ test('saves literal lesson files with real Git history and reopens the saved boa
   let runs = 0;
   page.on('request', (request) => { if (request.url().endsWith('/api/run')) runs++; });
   await page.goto('/');
-  await page.getByRole('tab', { name: 'Source & input', exact: true }).click();
   const source = '#include <stdio.h>\n\nint main(void) {\n    unknown_symbol;\n}\n';
-  await page.getByLabel(/CONFIRMED SOURCE/).fill(source);
+  // The editor holds the code that runs; the board text is what a snapshot saves.
+  await importBoard(page, boardFile({ code: source }));
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(source);
   await page.getByLabel('STANDARD INPUT · BLUE INK').fill('3 5\n\n');
   const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/snapshots') && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Save lesson snapshot', exact: true }).click();
@@ -37,7 +39,7 @@ test('saves literal lesson files with real Git history and reopens the saved boa
   await page.getByRole('tab', { name: 'History', exact: true }).click();
   const entry = page.locator('.snapshot-history li').filter({ hasText: saved.id });
   await entry.getByRole('button', { name: 'Open saved board' }).click();
-  await expect(page.getByLabel(/CONFIRMED SOURCE/)).toHaveValue(source);
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(source);
   await expect(page.getByLabel('STANDARD INPUT · BLUE INK')).toHaveValue('3 5\n\n');
   expect(runs).toBe(0);
 });

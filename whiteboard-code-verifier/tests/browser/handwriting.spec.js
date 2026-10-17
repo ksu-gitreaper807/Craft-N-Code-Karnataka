@@ -61,7 +61,7 @@ test('captures pen ink, requires edited teacher confirmation, then runs the conf
   await page.getByRole('checkbox', { name: 'I checked the code and input against the handwriting.' }).check();
   await page.getByRole('button', { name: 'Use confirmed code' }).click();
   expect(runRequests).toBe(0);
-  await expect(page.getByLabel(/CONFIRMED SOURCE/)).toHaveValue('#include <stdio.h>\n\nint main(void) {\n    puts("handwritten");\n    return 0;\n}');
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue('#include <stdio.h>\n\nint main(void) {\n    puts("handwritten");\n    return 0;\n}');
   await page.getByRole('button', { name: 'Verify & run' }).click();
   await expect(page.locator('.terminal pre')).toHaveText('handwritten\n');
   expect(runRequests).toBe(1);
@@ -90,7 +90,7 @@ test('captures blue handwriting separately while preserving exact typed code', a
   expect(capture.code).toBeUndefined();
   await page.getByRole('checkbox', { name: 'I checked the code and input against the handwriting.' }).check();
   await page.getByRole('button', { name: 'Use confirmed code' }).click();
-  await expect(page.getByLabel(/CONFIRMED SOURCE/)).toHaveValue(lessons[0].source);
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(lessons[0].source);
   await page.getByRole('button', { name: 'Verify & run' }).click();
   await expect(page.locator('.terminal pre')).toHaveText('3 + 5 = 8\n');
 });
