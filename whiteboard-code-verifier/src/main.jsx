@@ -94,6 +94,7 @@ function App() {
   const [fullscreen, setFullscreen] = useState(false);
   const [savingSnapshot, setSavingSnapshot] = useState(false);
   const [snapshotRevision, setSnapshotRevision] = useState(0);
+  const [automaticSnapshot, setAutomaticSnapshot] = useState('');
   const [pseudoLevel, setPseudoLevel] = useState(1);
   const [pseudoDraft, setPseudoDraft] = useState(null);
   const [phase, setPhase] = useState('');
@@ -305,10 +306,12 @@ function App() {
     };
     async function compile(source, transformed) {
       if (!boardUnchanged()) throw new Error('The board changed. Run again for the current selection; pending generated code was not executed.');
+      const compilationScene = boardScene();
       setPhase('compiler');
       const data = await requestJson('/api/run', { source, stdin: submitted.stdin, ...languagePayload(language) }, 30_000);
       compiled = true;
       setResult({ ...data, signature: submittedSignature, key: submittedKey, source, stdin: submitted.stdin, transformed, level, edited: submittedEdited });
+      await saveCompilationSnapshot(compilationScene, { source, stdin: submitted.stdin, language, level, kind: 'run', result: data });
       return data;
     }
     try {
@@ -351,9 +354,9 @@ function App() {
     return {
       type: 'excalidraw', version: 2, source: 'boardroom',
       elements: current,
-      appState: { viewBackgroundColor: '#ffffff', gridSize: null }, files: api.getFiles(),
+      appState: { viewBackgroundColor: '#ffffff', gridSize: null }, files: structuredClone(api.getFiles()),
       verifier: { frameId, language, result: currentProgram && !result?.edited && result?.signature === programSignature({ ...currentProgram, language }, frameId) ? result : null,
-        ocr: reviewed },
+        ocr: reviewed ? structuredClone(reviewed) : null },
     };
   }
 
@@ -378,16 +381,34 @@ function App() {
     }
     setSavingSnapshot(true); setError(''); setNotice('');
     try {
-      const response = await apiFetch('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: selectedFrame?.name || lesson?.title || 'Lesson', scene }) });
-      const data = await readApiJson(response);
-      if (!response.ok) throw new Error(data.error ?? 'Could not save the lesson snapshot.');
+      const data = await pushSnapshot(scene, selectedFrame?.name || lesson?.title || 'Lesson');
       setPanelVisible(true);
       setNotice(`Snapshot saved: ${data.id}${data.commit ? ` · Git ${data.commit.slice(0, 8)}` : ''}`);
       if (data.warning) setError(data.warning);
       else { setSnapshotRevision((revision) => revision + 1); setTab('history'); }
     } catch (caught) { setPanelVisible(true); setError(caught.message); }
     finally { setSavingSnapshot(false); }
+  }
+
+  async function pushSnapshot(scene, title) {
+    const response = await apiFetch('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, scene }), signal: AbortSignal.timeout(55_000) });
+    const data = await readApiJson(response);
+    if (!response.ok) throw new Error(data.error ?? 'Could not save the lesson snapshot.');
+    return data;
+  }
+
+  async function saveCompilationSnapshot(scene, execution) {
+    setAutomaticSnapshot('Saving full-board snapshot…');
+    try {
+      const savedScene = { ...scene, verifier: { ...scene.verifier, execution } };
+      const title = scene.elements.find(el => el.id === scene.verifier.frameId)?.name || 'Lesson';
+      const data = await pushSnapshot(savedScene, `${title} · ${execution.result.status}`);
+      setSnapshotRevision(revision => revision + 1);
+      setAutomaticSnapshot(data.warning || `Full-board snapshot saved · Git ${data.commit.slice(0, 8)}`);
+    } catch (caught) {
+      setAutomaticSnapshot(`Automatic snapshot failed: ${caught.name === 'TimeoutError' ? 'Archive request timed out. Refresh History before retrying.' : caught.message} Your run result is still available.`);
+    }
   }
 
   function restoreBoard(data) {
@@ -605,6 +626,7 @@ function App() {
             {error && geminiDiagnostic && <details className="raw-output"><summary>Gemini assistance diagnostics</summary><pre>{JSON.stringify(geminiDiagnostic, null, 2)}</pre><a href="https://aistudio.google.com/usage" target="_blank" rel="noreferrer">Check Gemini usage and limits</a></details>}
 
             <section className="panel-code" aria-label="Code that runs">
+              {automaticSnapshot && <p className="panel-help" role="status" aria-label="Automatic snapshot status">{automaticSnapshot}</p>}
               <div className="code-heading">
                 <label className="field-label" htmlFor="source-editor">CODE THAT RUNS · {lineCount} LINES</label>
                 <span className="code-badges">
@@ -639,6 +661,8 @@ function App() {
                 }}
               /></div>
               <div hidden={tab !== 'cases'}>{pseudoLevel > 1 && <p className="panel-help">First correct or generate code with the run button. Cases use that displayed program until the board or level changes.</p>}<TestCases program={caseProgram} signature={`${signature}:${pseudoLevel}:${caseProgram.source}`}
+                captureScene={boardScene} onCompiled={(scene, submitted, data) => saveCompilationSnapshot(scene,
+                  { source: submitted.source, stdin: submitted.stdin, language: submitted.language, level: pseudoLevel, kind: 'case', result: data })}
                 disabled={running || reading || !health?.available || !api || !frameId || !caseProgram.source.trim() || (pseudoLevel > 1 && !currentDraft)} onBusy={setRunning} /></div>
               {tab === 'history' && !snapshotAvailable && <p className="panel-help">{snapshotMessage}</p>}
               {tab === 'history' && snapshotAvailable && <SnapshotHistory key={snapshotRevision} onOpen={(scene) => {

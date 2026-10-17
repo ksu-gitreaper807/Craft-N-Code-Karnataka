@@ -36,7 +36,9 @@ export async function snapshotBundle(scene, program) {
   files.set('Dockerfile', `FROM ${IMAGE}\nCOPY --chmod=644 runner.py /opt/runner.py\n${copies}\nRUN chmod -R a+rX /opt\nUSER 65534:65534\nENTRYPOINT ["python3", "-I", "-B", "/opt/runner.py"]\n`);
   files.set('.dockerignore', '**\n!Dockerfile\n!runner.py\n!lib/\n!lib/*.h\n');
   if (scene.verifier.ocr) files.set('ocr.json', JSON.stringify(scene.verifier.ocr) + '\n');
-  const result = scene.verifier.result;
+  const execution = scene.verifier.execution;
+  const result = execution ? { ...execution.result, source: program.source, stdin: program.stdin,
+    signature: programSignature(program, scene.verifier.frameId), level: execution.level, kind: execution.kind } : scene.verifier.result;
   if (result?.signature === programSignature(program, scene.verifier.frameId) &&
       result.source === program.source && result.stdin === program.stdin) {
     // Browser-supplied historical evidence, never accepted as a new verification.
