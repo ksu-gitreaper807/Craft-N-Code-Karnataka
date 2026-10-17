@@ -17,7 +17,7 @@ import FrameControls from './FrameControls.jsx';
 import WorkspaceLayout from './WorkspaceLayout.jsx';
 import SnapshotHistory from './SnapshotHistory.jsx';
 import TestCases from './TestCases.jsx';
-import { apiFetch, hasApiToken, setApiToken } from './api.js';
+import { readApiJson, apiFetch, hasApiToken, setApiToken } from './api.js';
 import stackHeader from '../runner/lib/stack.h?raw';
 import listHeader from '../runner/lib/linked_list.h?raw';
 import queueHeader from '../runner/lib/queue.h?raw';
@@ -147,12 +147,12 @@ function App() {
         throw new Error('The Boardroom API needs an access token.');
       }
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
+        const data = await readApiJson(response).catch(() => ({}));
         throw new Error(data.error ?? (response.status === 404 ?
           'Boardroom API endpoint is missing. Set the Vercel Root Directory to whiteboard-code-verifier and redeploy.' :
           `Boardroom API returned HTTP ${response.status}.`));
       }
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (requestId !== healthRequest.current || currentLanguage.current !== language) return;
       if (!data || typeof data.runner?.available !== 'boolean' || typeof data.ocr?.available !== 'boolean') throw new Error('Invalid API response');
       setSnapshotAvailable(data.snapshots?.available !== false);
@@ -254,12 +254,15 @@ function App() {
     try {
       const response = await apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body), signal: abort.signal });
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (!response.ok) {
         if (data.diagnostic) setGeminiDiagnostic(data.diagnostic);
         throw new Error(data.error ?? `API returned HTTP ${response.status}.`);
       }
       return data;
+    } catch (caught) {
+      if (caught.diagnostic) setGeminiDiagnostic(caught.diagnostic);
+      throw caught;
     } finally { clearTimeout(timer); controller.current = null; }
   }
 
@@ -377,7 +380,7 @@ function App() {
     try {
       const response = await apiFetch('/api/snapshots', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: selectedFrame?.name || lesson?.title || 'Lesson', scene }) });
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (!response.ok) throw new Error(data.error ?? 'Could not save the lesson snapshot.');
       setPanelVisible(true);
       setNotice(`Snapshot saved: ${data.id}${data.commit ? ` · Git ${data.commit.slice(0, 8)}` : ''}`);

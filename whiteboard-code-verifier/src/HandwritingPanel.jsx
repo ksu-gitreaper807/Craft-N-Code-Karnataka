@@ -2,7 +2,7 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } f
 import { captureHandwriting } from './capture.js';
 import { extractProgram } from './board.js';
 import { inkFingerprint, makeReviewDraft, reviewedProgram } from './handwriting.js';
-import { apiFetch } from './api.js';
+import { apiFetch, readApiJson } from './api.js';
 import { languagePayload } from './languages.js';
 
 const HandwritingPanel = forwardRef(function HandwritingPanel({
@@ -46,7 +46,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
         body: JSON.stringify({ ...Object.fromEntries(Object.entries(captures).map(([channel, capture]) => [channel, capture.dataUrl])), ...languagePayload(language) }),
       });
-      const recognition = await response.json();
+      const recognition = await readApiJson(response);
       if (!response.ok) {
         setDiagnostic(recognition.diagnostic ?? null);
         throw new Error(recognition.error ?? `OCR returned HTTP ${response.status}.`);
@@ -54,6 +54,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
       setDraft(makeReviewDraft(recognition, captures, typed, snapshotFingerprint, frameId));
       setSelected({ channel: 'code', index: 0 });
     } catch (caught) {
+      if (caught.diagnostic) setDiagnostic(caught.diagnostic);
       if (caught.name === 'AbortError') setDiagnostic({ provider: 'gemini', reason: 'browser_timeout', quotaStatus: 'unknown' });
       setError(caught.name === 'AbortError' ? 'Handwriting recognition timed out. Gemini token/quota status is unknown. Nothing was executed.' : caught.message);
     } finally {

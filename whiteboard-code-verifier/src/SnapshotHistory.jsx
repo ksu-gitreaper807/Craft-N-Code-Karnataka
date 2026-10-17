@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { apiFetch } from './api.js';
+import { apiFetch, readApiJson } from './api.js';
 
 export default function SnapshotHistory({ onOpen }) {
   const [snapshots, setSnapshots] = useState([]);
@@ -11,7 +11,7 @@ export default function SnapshotHistory({ onOpen }) {
     setBusy(true); setError('');
     try {
       const response = await apiFetch('/api/snapshots');
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (!response.ok) throw new Error(data.error ?? 'Could not read lesson history.');
       setSnapshots(data.snapshots);
     } catch (caught) { setError(caught.message); }
@@ -20,7 +20,7 @@ export default function SnapshotHistory({ onOpen }) {
   async function refreshSync() {
     try {
       const response = await apiFetch('/api/snapshots/sync');
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (response.ok) setSync(data);
     } catch { /* History remains usable while status is temporarily unavailable. */ }
   }
@@ -28,7 +28,7 @@ export default function SnapshotHistory({ onOpen }) {
     try {
       const response = await apiFetch('/api/snapshots/sync', { method: 'POST' });
       if (!response.ok) throw new Error('Could not start Git sync. Try again.');
-      setSync(await response.json());
+      setSync(await readApiJson(response));
     } catch (caught) { setError(caught.message); }
   }
   useEffect(() => {
@@ -41,7 +41,7 @@ export default function SnapshotHistory({ onOpen }) {
     setBusy(true); setError('');
     try {
       const response = await apiFetch(`/api/snapshots/${encodeURIComponent(id)}`);
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (!response.ok) throw new Error(data.error ?? 'Could not open this snapshot.');
       onOpen(data.scene);
     } catch (caught) { setError(caught.message); }
@@ -53,7 +53,7 @@ export default function SnapshotHistory({ onOpen }) {
     setInspected({ id: snapshot.id, title: snapshot.title, busy: true });
     try {
       const response = await apiFetch(`/api/snapshots/${encodeURIComponent(snapshot.id)}/libraries`);
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (!response.ok) throw new Error(data.error ?? 'Could not read saved libraries.');
       setInspected({ id: snapshot.id, title: snapshot.title, ...data, file: data.headers[0]?.file ?? '' });
     } catch (caught) { setInspected({ id: snapshot.id, title: snapshot.title, error: caught.message }); }

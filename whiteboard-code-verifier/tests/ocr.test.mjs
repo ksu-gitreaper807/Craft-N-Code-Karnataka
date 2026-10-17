@@ -120,6 +120,20 @@ test('timeouts before headers and during the body leave quota status unknown', a
   }
 });
 
+test('OCR cancels a stalled provider before the 60-second hosting deadline and returns safe timeout diagnostics', async (t) => {
+  t.mock.method(AbortSignal, 'timeout', (milliseconds) => {
+    assert.ok(milliseconds <= 50_000, 'leave at least ten seconds for the hosted JSON error response');
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('provider stalled', 'TimeoutError')), 1);
+    return controller.signal;
+  });
+  await assert.rejects(recognizeHandwriting({ code: PNG }, { env, logger: () => {},
+    fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }),
+  }), (error) => error.status === 504 && error.ocrDiagnostic.reason === 'timeout' && error.ocrDiagnostic.quotaStatus === 'unknown');
+});
+
 test('keeps HTTP 429 evidence when error bodies are malformed or oversized and honors Retry-After', async () => {
   for (const payload of ['not JSON', 'x'.repeat(17 * 1024)]) {
     await assert.rejects(recognizeHandwriting({ code: PNG }, { env, logger: () => {}, fetchImpl: async () =>

@@ -137,14 +137,14 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
   function transportFailure(error, httpStatus = null) {
     const timeout = ['TimeoutError', 'AbortError'].includes(error.name);
     return requestFailure(timeout ?
-      'Gemini OCR timed out after 60 seconds. Token/quota exhaustion is unconfirmed; check Gemini usage or try a smaller board.' :
+      'Gemini OCR timed out after 50 seconds. Token/quota exhaustion is unconfirmed; check Gemini usage or try a smaller board.' :
       'Could not reach Gemini. Token/quota status is unknown; check your network and Gemini usage.',
     timeout ? 504 : 502, 'ocr_unavailable', { reason: timeout ? 'timeout' : 'network_error', httpStatus, quotaStatus: 'unknown' });
   }
   let response;
   try {
     response = await fetchImpl(ENDPOINT, {
-      method: 'POST', signal: AbortSignal.timeout(60_000),
+      method: 'POST', signal: AbortSignal.timeout(50_000),
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY.trim() },
       body: JSON.stringify({
         model: config.model, input, store: false,

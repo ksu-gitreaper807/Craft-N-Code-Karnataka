@@ -2,6 +2,7 @@ import { selectWritingRegion } from './board-helpers.js';
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { lessons } from '../../src/lessons.js';
+import { boardFile, importBoard } from './helpers.js';
 
 // The provider is explicitly stubbed here. These tests verify capture/review and
 // real Docker execution, not the accuracy of a live handwriting recognition model.
@@ -32,6 +33,28 @@ async function drawStroke(page, offset = 0) {
   await page.mouse.move(x + 50, y + 5, { steps: 5 });
   await page.mouse.up();
 }
+
+test('a hosting timeout page becomes an OCR timeout with unknown quota and never executes code', async ({ page }) => {
+  let runs = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/run')) runs++; });
+  await page.route('**/api/health', route => route.fulfill({ json: {
+    runner: { available: false }, ocr: { available: true, provider: 'test-fixture', model: 'fixture-only' },
+  } }));
+  await page.route('**/api/ocr', route => route.fulfill({ status: 504, contentType: 'text/html',
+    body: '<html><h1>FUNCTION_INVOCATION_TIMEOUT</h1></html>' }));
+  const file = boardFile({ code: 'int main(void) { return 0; }' });
+  const board = JSON.parse(file.buffer.toString());
+  board.elements.push({ id: 'test-ink', type: 'freedraw', frameId: 'frame', x: 60, y: 80, width: 40, height: 20,
+    strokeColor: '#1e1e1e', points: [[0, 0], [40, 20]] });
+  file.buffer = Buffer.from(JSON.stringify(board));
+  await page.goto('/');
+  await importBoard(page, file);
+  await page.getByRole('button', { name: 'Read & review handwriting' }).click();
+  await expect(page.locator('.handwriting-panel')).toContainText('Handwriting recognition timed out at the hosting service (HTTP 504)');
+  await expect(page.locator('.handwriting-panel')).toContainText('Gemini token/quota status is unknown');
+  await expect(page.locator('.handwriting-panel')).not.toContainText('JSON.parse');
+  expect(runs).toBe(0);
+});
 
 test('captures pen ink, requires edited teacher confirmation, then runs the confirmed C in Docker', async ({ page }, testInfo) => {
   await configureProviderFixture(page);

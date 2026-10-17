@@ -152,7 +152,7 @@ Six starter lessons demonstrate input/output, a use-after-free error, an empty-s
 | `GET /api/snapshots/sync` | Report local and remote lesson history sync state |
 | `POST /api/snapshots/sync` | Queue an immediate push retry when an archive remote is configured |
 
-OCR permits one request in flight and six attempts per minute, with a 4 MiB request-body limit and a 60-second provider deadline. Execution permits two requests in flight and 20 attempts per minute. These limits are process-local and reset when the server restarts.
+OCR permits one request in flight and six attempts per minute, with a 4 MiB request-body limit and a 50-second provider deadline, leaving time to return a JSON error before the hosted function limit. Execution permits two requests in flight and 20 attempts per minute. These limits are process-local and reset when the server restarts.
 
 OCR failures include safe diagnostic metadata in the API response and an expandable UI panel. The backend logs `[ocr:gemini]` records with HTTP status, duration, quota classification, and numeric per-request token usage on success. Provider-reported token limits, generic quota/rate limits, and depleted credits are distinguished; a timeout leaves quota status unknown. Logs omit credentials, images, transcriptions, and raw error payloads. Remaining project quota must be checked in AI Studio.
 

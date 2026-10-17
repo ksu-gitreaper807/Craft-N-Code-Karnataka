@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { apiFetch } from './api.js';
+import { apiFetch, readApiJson } from './api.js';
 import { languagePayload } from './languages.js';
 
 const MAX_CASES = 5;
@@ -42,7 +42,7 @@ export default function TestCases({ program, signature, disabled, onBusy }) {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ source: submitted.source, stdin: item.stdin, ...languagePayload(submitted.language) }), signal: controller.signal,
           });
-          const data = await response.json();
+          const data = await readApiJson(response);
           if (!response.ok) throw new Error(data.error ?? `Runner returned HTTP ${response.status}.`);
           outcomes.push({ ...item, actualStatus: data.status, actualOutput: data.stdout,
             diagnostics: data.diagnostics, passed: data.status === item.expectedStatus &&

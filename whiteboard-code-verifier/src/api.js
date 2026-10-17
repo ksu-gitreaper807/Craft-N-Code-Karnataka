@@ -1,3 +1,5 @@
+export { readApiJson } from './api-response.js';
+
 // Vite embeds only the public API origin. The teacher enters the private token at runtime.
 const origin = (import.meta.env.VITE_BOARDROOM_API_ORIGIN ?? '').replace(/\/$/, '');
 const tokenKey = 'boardroom-api-token';

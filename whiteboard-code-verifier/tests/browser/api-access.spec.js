@@ -50,7 +50,7 @@ test('a serverless API keeps C and handwriting available while explaining histor
   await expect(page.getByRole('button', { name: 'Save lesson snapshot' })).toBeDisabled();
   await openPanel(page);
   await page.getByRole('tab', { name: 'History' }).click();
-  await expect(page.getByText('Lesson history needs persistent storage.')).toBeVisible();
+  await expect(page.getByText('Lesson history is unavailable.', { exact: false })).toBeVisible();
   await page.getByRole('tab', { name: 'Libraries' }).click();
   await expect(page.locator('pre').filter({ hasText: 'stack_init' }).first()).toBeVisible();
 });
