@@ -107,16 +107,21 @@ function App() {
         authRequired = true;
         throw new Error('The Boardroom API needs an access token.');
       }
-      if (!response.ok) throw new Error('API unavailable');
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? (response.status === 404 ?
+          'Boardroom API endpoint is missing. Set the Vercel Root Directory to whiteboard-code-verifier and redeploy.' :
+          `Boardroom API returned HTTP ${response.status}.`));
+      }
       const data = await response.json();
       if (!data || typeof data.runner?.available !== 'boolean' || typeof data.ocr?.available !== 'boolean') throw new Error('Invalid API response');
       setSnapshotAvailable(data.snapshots?.available !== false);
       setApiAuthRequired(false);
       setHealth(data.runner);
       setOcrHealth(data.ocr);
-    } catch {
+    } catch (caught) {
       const local = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-      const message = authRequired ? 'The Boardroom API needs a valid access token.' : local ? 'Boardroom API is offline. Start it with npm run dev or npm start.' :
+      const message = authRequired ? 'The Boardroom API needs a valid access token.' : caught.message && caught.message !== 'Failed to fetch' ? caught.message : local ? 'Boardroom API is offline. Start it with npm run dev or npm start.' :
         'This site has no Boardroom API connection. Board editing and downloads work; verification and handwriting recognition need the hosted API.';
       setApiAuthRequired(authRequired);
       setSnapshotAvailable(false);
