@@ -4,7 +4,7 @@ An executable whiteboard for teachers explaining C and Python. Handwrite or type
 
 The application is self-contained in `whiteboard-code-verifier/`; hackathon submission materials are maintained separately.
 
-Vercel can run Gemini OCR and hosted C compilation without your own Docker server using [Vercel Functions](docs/vercel-serverless.md). Configure server-side secrets and Wandbox access there. For local Docker execution and persistent Git lesson history, use the [Docker API deployment guide](docs/docker-api-deployment.md). Until either API is configured, the deployed page supports board editing and downloads.
+Vercel can run Gemini OCR, hosted C/Python execution, and GitHub-backed lesson snapshots without your own Docker server using [Vercel Functions](docs/vercel-serverless.md). Configure server-side secrets, Wandbox access, and an archive repository there. For local Docker execution and a disk-backed Git archive, use the [Docker API deployment guide](docs/docker-api-deployment.md). Until either API is configured, the deployed page supports board editing and downloads.
 
 See the [technical stack and project overview](docs/technical-overview.md) for the architecture, implementation details, API, execution limits, and current scope.
 
@@ -20,7 +20,7 @@ See the [technical stack and project overview](docs/technical-overview.md) for t
 - A memory diagram using actual stack-pointer and buffer addresses printed by the memory lesson.
 - Trusted header-only `stack.h`, `linked_list.h`, `queue.h`, and `search.h`, visible in the UI, with teacher callsite attribution.
 - Rule-based teaching notes and downloadable/importable Excalidraw scenes. Downloads include the current result when it still matches the board.
-- Dated lesson snapshots containing the scene, selected program's C or Python source, and stdin, with local Git commits and a History tab.
+- Dated lesson snapshots containing the scene, selected program's C or Python source, and stdin, with local or GitHub-backed Git commits and a History tab.
 
 ## Run locally
 
@@ -110,6 +110,8 @@ Download or save a snapshot before switching lessons or refreshing to retain edi
 
 ## Lesson snapshots and Git history
 
+On Vercel, configure `SNAPSHOT_GITHUB_REPOSITORY`, `SNAPSHOT_GITHUB_TOKEN` (Contents: read/write), and optionally `SNAPSHOT_GITHUB_BRANCH` (default `boardroom-lessons`); see [hosted snapshot setup](docs/vercel-serverless.md#github-lesson-snapshots). Hosted saves commit the complete dated folder directly to that GitHub branch and remain available after redeploys. Public repositories expose saved lesson contents. Lesson commits on `boardroom-lessons` do not trigger Vercel deployments. The filesystem and Git-remote commands below apply to the local/persistent Node server.
+
 Click **Snapshot** in the top bar to save the current board and the selected frame's source/input on the API server. Handwriting must be reviewed and confirmed first. Typed lessons can be saved before running, including incomplete or intentionally incorrect C. Saving never compiles the program or calls Gemini.
 
 ```text
@@ -194,7 +196,7 @@ The Node API uses only built-in modules. Python's standard library owns compilat
 
 `POST /api/ocr` accepts `{ "code": "data:image/png;base64,...", "stdin": "data:image/png;base64,..." }`; omit a channel when it contains no handwriting. It returns line text, normalized line boxes, ambiguity flags, alternatives, provider/model metadata, and `requiresConfirmation: true`. Set `language: "python"` for Python indentation and syntax context. It never compiles or runs anything. Requests are limited to 4 MiB, PNG dimensions to 2048 × 2048, one recognition at a time, and six attempts per minute. The provider deadline is 60 seconds.
 
-`POST /api/snapshots` accepts `{ "title": "Lesson name", "scene": { ... } }` and returns the dated folder ID and local Git commit. Source and stdin are derived from the scene, with current OCR confirmation required for handwritten channels. Snapshot bodies are limited to 4 MiB and scene data to 2 MB. `GET /api/snapshots` lists recent history; `GET /api/snapshots/<id>` reads a committed scene. Hosted access uses an exact frontend origin and a runtime API token; see the deployment guide.
+`POST /api/snapshots` accepts `{ "title": "Lesson name", "scene": { ... } }` and returns the dated folder ID and Git commit. Source and stdin are derived from the scene, with current OCR confirmation required for handwritten channels. Snapshot bodies are limited to 4 MiB and scene data to 2 MB. `GET /api/snapshots` lists recent history; `GET /api/snapshots/<id>` reads a committed scene. Hosted access uses an exact frontend origin and a runtime API token; see the deployment guide.
 
 `GET /api/snapshots/<id>/libraries` returns only allowlisted headers bundled in the committed lesson, alongside current application copies for comparison. It reads historical content from Git rather than mutable snapshot files.
 

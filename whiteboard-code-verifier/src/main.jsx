@@ -71,6 +71,7 @@ function App() {
   const [health, setHealth] = useState(null);
   const [ocrHealth, setOcrHealth] = useState(null);
   const [snapshotAvailable, setSnapshotAvailable] = useState(false);
+  const [snapshotMessage, setSnapshotMessage] = useState('Connect the API to check lesson storage.');
   const [apiAuthRequired, setApiAuthRequired] = useState(false);
   const [apiTokenDraft, setApiTokenDraft] = useState('');
   const [reading, setReading] = useState(false);
@@ -130,6 +131,7 @@ function App() {
       if (requestId !== healthRequest.current || currentLanguage.current !== language) return;
       if (!data || typeof data.runner?.available !== 'boolean' || typeof data.ocr?.available !== 'boolean') throw new Error('Invalid API response');
       setSnapshotAvailable(data.snapshots?.available !== false);
+      setSnapshotMessage(data.snapshots?.message ?? 'Lesson history is unavailable. You can download this board from the top bar.');
       setApiAuthRequired(false);
       setHealth(data.runner);
       setOcrHealth(data.ocr);
@@ -495,7 +497,7 @@ function App() {
               /></div>
               <div hidden={tab !== 'cases'}>{pseudoLevel > 1 && <p className="panel-help">First correct or generate code with the run button. Cases use that displayed program until the board or level changes.</p>}<TestCases program={caseProgram} signature={`${signature}:${pseudoLevel}:${caseProgram.source}`}
                 disabled={running || reading || !health?.available || !api || !frameId || !program.source.trim() || (pseudoLevel > 1 && !currentDraft)} onBusy={setRunning} /></div>
-              {tab === 'history' && !snapshotAvailable && <p className="panel-help">Lesson history needs persistent storage. You can download this board from the top bar.</p>}
+              {tab === 'history' && !snapshotAvailable && <p className="panel-help">{snapshotMessage}</p>}
               {tab === 'history' && snapshotAvailable && <SnapshotHistory key={snapshotRevision} onOpen={(scene) => {
                 const ink = restoreBoard(scene);
                 setTab(ink ? 'handwriting' : 'source');

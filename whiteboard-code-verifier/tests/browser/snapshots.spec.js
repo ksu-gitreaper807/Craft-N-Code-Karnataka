@@ -6,6 +6,18 @@ import { join } from 'node:path';
 
 const archive = fileURLToPath(new URL('../../test-results/lesson-snapshots/', import.meta.url));
 
+test('unconfigured hosted history explains the missing GitHub setup and disables saving', async ({ page }) => {
+  await page.route('**/api/health', (route) => route.fulfill({ json: {
+    runner: { available: false }, ocr: { available: false },
+    snapshots: { available: false, message: 'Configure SNAPSHOT_GITHUB_TOKEN in Vercel, then redeploy.' },
+  } }));
+  await page.goto('/');
+  await page.getByLabel('Demo lesson').selectOption('sum');
+  await page.getByRole('tab', { name: 'History', exact: true }).click();
+  await expect(page.getByLabel('Verification controls and results')).toContainText('Configure SNAPSHOT_GITHUB_TOKEN');
+  await expect(page.getByRole('button', { name: 'Save lesson snapshot', exact: true })).toBeDisabled();
+});
+
 test('compares a committed teaching header with the current version without opening the board', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Demo lesson').selectOption('sum');
