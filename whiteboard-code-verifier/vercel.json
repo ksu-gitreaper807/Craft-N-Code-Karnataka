@@ -1,5 +1,10 @@
 {
+  "git": { "deploymentEnabled": { "boardroom-lessons": false } },
+  "rewrites": [
+    { "source": "/api/snapshots/:path+", "destination": "/api/snapshots?snapshotPath=:path*" }
+  ],
   "functions": {
+    "api/snapshots.js": { "maxDuration": 60, "includeFiles": "{runner/runner.py,runner/lib/*.h,server/snapshot-replay.py}" },
     "api/pseudocode.js": { "maxDuration": 60, "includeFiles": "runner/lib/*.h" },
     "api/ocr.js": { "maxDuration": 60 },
     "api/run.js": { "maxDuration": 30, "includeFiles": "runner/lib/*.h" }

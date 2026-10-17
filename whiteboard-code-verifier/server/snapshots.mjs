@@ -14,7 +14,7 @@ import { validLanguage, languageInfo } from '../src/languages.js';
 const execute = promisify(execFile);
 const APP = fileURLToPath(new URL('../', import.meta.url));
 export const SNAPSHOT_BODY_LIMIT = 4 * 1024 * 1024;
-const ID = /^\d{4}-\d{2}-\d{2}\/\d{2}-\d{2}-\d{2}-[a-z0-9-]{1,60}-[a-f0-9]{8}$/;
+export const SNAPSHOT_ID = /^\d{4}-\d{2}-\d{2}\/\d{2}-\d{2}-\d{2}-[a-z0-9-]{1,60}-[a-f0-9]{8}$/;
 const invalid = (message, status = 400) => Object.assign(new Error(message), { status });
 const HISTORICAL_HEADERS = new Set([...libraries.map((library) => library.file), 'board_contract.h']);
 
@@ -50,6 +50,25 @@ function snapshotProgram(scene) {
   return { ...program, language };
 }
 
+export async function prepareSnapshot(body, now = new Date()) {
+  const scene = body?.scene;
+  const program = snapshotProgram(scene);
+  const title = (typeof body.title === 'string' ? body.title : 'Lesson').replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0, 100) || 'Lesson';
+  const createdAt = now.toISOString();
+  const day = createdAt.slice(0, 10);
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'lesson';
+  const id = `${day}/${createdAt.slice(11, 19).replaceAll(':', '-')}-${slug}-${randomUUID().slice(0, 8)}`;
+  const savedScene = { ...scene, elements: scene.elements.filter((el) => !isOverlay(el)),
+    verifier: { ...scene.verifier, language: program.language, snapshot: { title, createdAt } } };
+  // Compact JSON keeps large stroke arrays within the board import limit.
+  const serialized = JSON.stringify(savedScene) + '\n';
+  if (Buffer.byteLength(serialized) > 2_000_000) throw invalid('The saved scene exceeds the 2 MB board import limit.');
+  const bundle = await snapshotBundle(savedScene, program);
+  const files = new Map([['board.excalidraw', serialized], [languageInfo(program.language).file, program.source], ['input.txt', program.stdin], ...bundle.files]);
+  files.set('lib.lock', bundle.manifest(files));
+  return { id, title, createdAt, files };
+}
+
 export function createSnapshotStore({ root = resolve(APP, process.env.SNAPSHOT_DIR || 'snapshots'), now = () => new Date() } = {}) {
   root = resolve(root);
   let saving = false;
@@ -74,21 +93,8 @@ export function createSnapshotStore({ root = resolve(APP, process.env.SNAPSHOT_D
       if (saving) throw invalid('A snapshot is already being saved. Try again shortly.', 429);
       saving = true;
       try {
-        const scene = body?.scene;
-        const program = snapshotProgram(scene);
-        const title = (typeof body.title === 'string' ? body.title : 'Lesson').replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0, 100) || 'Lesson';
-        const createdAt = now().toISOString();
+        const { id, title, createdAt, files } = await prepareSnapshot(body, now());
         const day = createdAt.slice(0, 10);
-        const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'lesson';
-        const id = `${day}/${createdAt.slice(11, 19).replaceAll(':', '-')}-${slug}-${randomUUID().slice(0, 8)}`;
-        const savedScene = { ...scene, elements: scene.elements.filter((el) => !isOverlay(el)),
-          verifier: { ...scene.verifier, language: program.language, snapshot: { title, createdAt } } };
-        // Compact JSON keeps large stroke arrays within the board import limit.
-        const serialized = JSON.stringify(savedScene) + '\n';
-        if (Buffer.byteLength(serialized) > 2_000_000) throw invalid('The saved scene exceeds the 2 MB board import limit.');
-        const bundle = await snapshotBundle(savedScene, program);
-        const files = new Map([['board.excalidraw', serialized], [languageInfo(program.language).file, program.source], ['input.txt', program.stdin], ...bundle.files]);
-        files.set('lib.lock', bundle.manifest(files));
         const parent = join(root, day);
         await mkdir(parent, { recursive: true, mode: 0o700 });
         const temporary = await mkdtemp(join(parent, '.pending-'));
@@ -128,16 +134,16 @@ export function createSnapshotStore({ root = resolve(APP, process.env.SNAPSHOT_D
         const [commit, createdAt, subject] = header.split('\0');
         const path = paths.find((name) => name.endsWith('/board.excalidraw'));
         const id = path?.slice(0, -'/board.excalidraw'.length);
-        return id && ID.test(id) ? [{ id, commit, createdAt, title: subject.replace(/^board: /, '') }] : [];
+        return id && SNAPSHOT_ID.test(id) ? [{ id, commit, createdAt, title: subject.replace(/^board: /, '') }] : [];
       });
     },
     async read(id) {
-      if (!ID.test(id)) throw invalid('Snapshot not found.', 404);
+      if (!SNAPSHOT_ID.test(id)) throw invalid('Snapshot not found.', 404);
       try { return JSON.parse(await git(['show', `HEAD:${id}/board.excalidraw`])); }
       catch { throw invalid('Snapshot not found in Git history.', 404); }
     },
     async libraries(id) {
-      if (!ID.test(id)) throw invalid('Snapshot not found.', 404);
+      if (!SNAPSHOT_ID.test(id)) throw invalid('Snapshot not found.', 404);
       let rawManifest;
       try { rawManifest = await git(['show', `HEAD:${id}/lib.lock`]); }
       catch {
