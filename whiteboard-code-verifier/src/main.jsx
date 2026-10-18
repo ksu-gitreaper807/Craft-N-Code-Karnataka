@@ -958,7 +958,7 @@ function App() {
               {composed.skipped && <p className="code-note">Your text already declares main(), so it runs as a full program, not inside the template.</p>}
               <CodeEditor id="source-editor" ref={editorRef} value={runSource} onChange={editCode} diagnostics={shownDiagnostics} disabled={busy}
                 placeholder={hasInk && !recognizedProgram ? 'Confirmed handwriting appears here. You can also type code directly.' : `Type ${languageLabel} here, or write it on the board.`} />
-              <div className="code-heading"><label className="field-label" htmlFor="stdin-editor">STANDARD INPUT · BLUE INK</label>
+              <div className="code-heading input-heading"><label className="field-label" htmlFor="stdin-editor">STANDARD INPUT · BLUE INK</label>
                 <button className="quiet-button" onClick={scanInput} disabled={busy || !api || !frameId || !inkChannels.stdin || !ocrHealth?.available}>Scan input</button>
               </div>
               <textarea id="stdin-editor" className="input-editor" value={program.stdin} spellCheck={false} readOnly={hasInk} placeholder="No input: the program receives EOF." disabled={busy || !frameId}

@@ -420,3 +420,6 @@ pre { margin: 0; font: 11px/1.7 'SFMono-Regular', Consolas, 'Liberation Mono', m
 [data-theme='dark'] .program-region-label { background: #202b23; border-color: #526454; color: #cbdcc9; }
 [data-theme='dark'] .program-region[data-selected='true'] { border-color: #8bc68b; box-shadow: 0 0 0 2px #111a14aa; }
 [data-theme='dark'] .program-region[data-selected='true'] .program-region-label { background: #315b3e; border-color: #8bc68b; color: #f2ffec; }
+
+.panel-code .input-heading { flex-direction: column; align-items: stretch; gap: 8px; margin-top: 12px; }
+.input-heading > .quiet-button { align-self: center; justify-content: center; }
