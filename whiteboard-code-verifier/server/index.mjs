@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { sandboxHealth, runSandbox } from './sandbox.mjs';
+import { hostedRunnerHealth, runHostedProgram } from './hosted-runner.mjs';
 import { loadOcrEnvironment, ocrConfiguration, recognizeHandwriting, OCR_BODY_LIMIT } from './ocr.mjs';
 import { libraries } from '../src/libraries.js';
 import { createSnapshotStore, SNAPSHOT_BODY_LIMIT } from './snapshots.mjs';
@@ -45,7 +46,26 @@ export function validatePayload(body) {
   return null;
 }
 
-export function createHandler({ run = runSandbox, health = sandboxHealth, now = Date.now,
+async function defaultHealth(language) {
+  const local = await sandboxHealth();
+  if (local.available) return local;
+  if (process.env.WANDBOX_API_URL) {
+    const hosted = await hostedRunnerHealth({ language });
+    if (hosted.available) return hosted;
+  }
+  return local;
+}
+
+async function defaultRun(payload) {
+  const local = await sandboxHealth();
+  if (local.available) return runSandbox(payload);
+  if (process.env.WANDBOX_API_URL) {
+    return runHostedProgram(payload);
+  }
+  return runSandbox(payload);
+}
+
+export function createHandler({ run = defaultRun, health = defaultHealth, now = Date.now,
   recognize = recognizeHandwriting, assist = assistPseudocode, ocrHealth = ocrConfiguration, snapshots = createSnapshotStore(),
   appOrigin = process.env.BOARDROOM_APP_ORIGIN, apiHost = process.env.BOARDROOM_API_HOST,
   apiToken = process.env.BOARDROOM_API_TOKEN } = {}) {

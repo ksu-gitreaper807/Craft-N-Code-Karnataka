@@ -46,6 +46,11 @@ function Icon({ name, size = 18 }) {
     expand: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
     save: <><path d="M5 4h12l2 2v14H5z" /><path d="M8 4v5h8V4M8 20v-6h8v6" /></>,
     panel: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></>,
+    zoomIn: <><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35M11 8v6M8 11h6" /></>,
+    zoomOut: <><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35M8 11h6" /></>,
+    fit: <><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" /></>,
+    plus: <path d="M12 5v14M5 12h14" />,
+    trash: <><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.code}</svg>;
 }
@@ -104,6 +109,9 @@ function App() {
   const [snippetMode, setSnippetMode] = useState(loadSnippetMode);
   const [template, setTemplate] = useState(loadTemplate);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [tabs, setTabs] = useState([{ id: 'tab-1', title: 'Board 1', elements: [] }]);
+  const [activeTabId, setActiveTabId] = useState('tab-1');
+  const [penColor, setPenColor] = useState(CODE_COLOR);
   const [pen, setPen] = useState('');
   const [toolsOpen, setToolsOpen] = useState(false);
   const [regionPending, setRegionPending] = useState(false);
@@ -511,13 +519,73 @@ function App() {
     if (created.strokes > 0) { setPanelVisible(true); setTab('handwriting'); }
   }
 
-  function selectPen(kind) {
+  function selectPen(kind, customColor = null) {
     if (!api) return;
     cancelRegion();
-    api.updateScene({ appState: { currentItemStrokeColor: kind === 'code' ? CODE_COLOR : INPUT_COLOR } });
+    const color = customColor || (kind === 'code' ? CODE_COLOR : kind === 'input' ? INPUT_COLOR : penColor);
+    if (customColor) setPenColor(customColor);
+    api.updateScene({ appState: { currentItemStrokeColor: color } });
     api.setActiveTool({ type: 'freedraw' });
     setPen(kind);
     setToolsOpen(true);
+  }
+
+  function zoomBoard(delta) {
+    if (!api) return;
+    const currentZoom = api.getAppState().zoom.value;
+    const nextZoom = Math.min(3, Math.max(0.2, currentZoom + delta));
+    api.updateScene({ appState: { zoom: { value: nextZoom } } });
+  }
+
+  function resetZoom() {
+    if (!api) return;
+    const sceneElements = api.getSceneElements().filter((el) => !isOverlay(el));
+    if (sceneElements.length) {
+      api.scrollToContent(sceneElements, { fitToContent: true, maxZoom: 1 });
+    } else {
+      api.updateScene({ appState: { zoom: { value: 1 }, scrollX: 0, scrollY: 0 } });
+    }
+  }
+
+  function switchTab(targetId) {
+    if (targetId === activeTabId || !api) return;
+    const currentEls = api.getSceneElements().filter((el) => !isOverlay(el));
+    setTabs((prev) => prev.map((t) => t.id === activeTabId ? { ...t, elements: currentEls } : t));
+    const target = tabs.find((t) => t.id === targetId);
+    if (target) {
+      setActiveTabId(targetId);
+      api.updateScene({ elements: target.elements });
+      resetWork();
+      setFrameId('');
+      setNotice(`Switched to ${target.title}`);
+    }
+  }
+
+  function addNewTab() {
+    if (!api) return;
+    const currentEls = api.getSceneElements().filter((el) => !isOverlay(el));
+    const newId = `tab-${Date.now()}`;
+    const newTitle = `Board ${tabs.length + 1}`;
+    setTabs((prev) => [...prev.map((t) => t.id === activeTabId ? { ...t, elements: currentEls } : t), { id: newId, title: newTitle, elements: [] }]);
+    setActiveTabId(newId);
+    api.updateScene({ elements: [] });
+    resetWork();
+    setFrameId('');
+    setNotice(`Opened ${newTitle}`);
+  }
+
+  function closeTab(e, closeId) {
+    e.stopPropagation();
+    if (tabs.length <= 1) return;
+    const remaining = tabs.filter((t) => t.id !== closeId);
+    setTabs(remaining);
+    if (activeTabId === closeId) {
+      const nextTab = remaining[0];
+      setActiveTabId(nextTab.id);
+      api.updateScene({ elements: nextTab.elements });
+      resetWork();
+      setFrameId('');
+    }
   }
 
   function closeTools() {
@@ -554,6 +622,17 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <a className="brand" href="/" aria-label="Boardroom home"><span className="brand-mark"><Icon name="board" size={23} /></span><span>boardroom<span className="brand-dot">.</span></span></a>
+        <div className="board-tabs" role="tablist" aria-label="Whiteboard tabs">
+          {tabs.map((t) => (
+            <div key={t.id} className={`board-tab ${activeTabId === t.id ? 'active' : ''}`} onClick={() => switchTab(t.id)} role="tab" aria-selected={activeTabId === t.id}>
+              <span>{t.title}</span>
+              {tabs.length > 1 && (
+                <button className="tab-close" aria-label={`Close ${t.title}`} onClick={(e) => closeTab(e, t.id)}>×</button>
+              )}
+            </div>
+          ))}
+          <button className="tab-new" aria-label="New whiteboard tab" onClick={addNewTab} title="Create new whiteboard tab"><Icon name="plus" size={14} /></button>
+        </div>
         <label className="lesson-select"><span>Lesson</span><select aria-label="Demo lesson" value={lessonId} disabled={busy || !api} onChange={(event) => chooseLesson(event.target.value)}>{!lessonId && <option value="">Blank canvas</option>}{lessons.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
         <button className="quiet-button blank-button" aria-label="+ Blank canvas" onClick={newBlankBoard} disabled={!api || busy}><span aria-hidden="true">+</span><span className="long" aria-hidden="true"> Blank canvas</span></button>
         <div className="header-actions">
@@ -582,9 +661,19 @@ function App() {
             </div>}
             <div className="toolstrip" role="toolbar" aria-label="Board tools">
               <div className="tool-group" role="group" aria-label="Draw">
-                <button className="tool" aria-label="Pen: code" aria-pressed={pen === 'code'} onClick={() => selectPen('code')} disabled={!api || busy} title="Black ink is code"><i className="ink code-ink" /><span className="tool-label">Code</span></button>
-                <button className="tool" aria-label="Pen: input" aria-pressed={pen === 'input'} onClick={() => selectPen('input')} disabled={!api || busy} title="Blue ink is program input"><i className="ink input-ink" /><span className="tool-label">Input</span></button>
+                <button className="tool" aria-label="Pen: code" aria-pressed={pen === 'code'} onClick={() => selectPen('code', CODE_COLOR)} disabled={!api || busy} title="Black ink is code"><i className="ink code-ink" /><span className="tool-label">Code</span></button>
+                <button className="tool" aria-label="Pen: input" aria-pressed={pen === 'input'} onClick={() => selectPen('input', INPUT_COLOR)} disabled={!api || busy} title="Blue ink is program input"><i className="ink input-ink" /><span className="tool-label">Input</span></button>
+                <div className="color-swatches" title="Choose pen color">
+                  {['#1e1e1e', '#1971c2', '#2f9e44', '#e03131', '#f08c00', '#9c36b5'].map((color) => (
+                    <button key={color} className={`swatch ${penColor === color ? 'selected' : ''}`} style={{ backgroundColor: color }} onClick={() => selectPen('custom', color)} aria-label={`Color ${color}`} />
+                  ))}
+                </div>
                 {toolsOpen && <button className="tool done" aria-label="Close drawing tools" onClick={closeTools}><Icon name="check" size={16} /><span>Done</span></button>}
+              </div>
+              <div className="tool-group" role="group" aria-label="Navigate & Zoom">
+                <button className="tool icon-only" aria-label="Zoom in" onClick={() => zoomBoard(0.2)} disabled={!api} title="Zoom in"><Icon name="zoomIn" /></button>
+                <button className="tool icon-only" aria-label="Zoom out" onClick={() => zoomBoard(-0.2)} disabled={!api} title="Zoom out"><Icon name="zoomOut" /></button>
+                <button className="tool icon-only" aria-label="Fit content" onClick={resetZoom} disabled={!api} title="Fit to content"><Icon name="fit" /></button>
               </div>
               <div className="tool-group" role="group" aria-label="Select">
                 <button className="tool" aria-label="Select code and input" aria-pressed={regionPending} onClick={regionPending ? cancelRegion : selectCodeRegion} disabled={!api || busy} title="Drag a box around the code and its input"><Icon name="region" /><span className="tool-label">{regionPending ? 'Drag a box…' : 'Region'}</span></button>

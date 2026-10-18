@@ -1,4 +1,4 @@
-import { readLimited, providerFailure, tokenUsage } from './gemini-response.mjs';
+import { readLimited, providerFailure, tokenUsage, parseApiKeys } from './gemini-response.mjs';
 import { validLanguage } from '../src/languages.js';
 import { existsSync } from 'node:fs';
 import { loadEnvFile } from 'node:process';
@@ -10,10 +10,11 @@ const DEFAULT_MODEL = 'gemini-3.8-flash';
 export const OCR_BODY_LIMIT = 4 * 1024 * 1024;
 
 export function ocrConfiguration(env = process.env) {
+  const keys = parseApiKeys(env);
   return {
-    available: Boolean(env.GEMINI_API_KEY?.trim()),
+    available: keys.length > 0,
     provider: 'gemini', model: env.OCR_MODEL?.trim() || DEFAULT_MODEL,
-    message: env.GEMINI_API_KEY?.trim() ? undefined : 'Set GEMINI_API_KEY on the API host, then redeploy or restart it.',
+    message: keys.length > 0 ? undefined : 'Set GEMINI_API_KEY on the API host, then redeploy or restart it.',
   };
 }
 
@@ -139,36 +140,53 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
       'Could not reach Gemini. Token/quota status is unknown; check your network and Gemini usage.',
     timeout ? 504 : 502, 'ocr_unavailable', { reason: timeout ? 'timeout' : 'network_error', httpStatus, quotaStatus: 'unknown' });
   }
+  const apiKeys = parseApiKeys(env);
+  if (!apiKeys.length) throw fail('Set GEMINI_API_KEY on the API host, then redeploy or restart it.', 503);
+
   let response;
-  try {
-    response = await fetchImpl(ENDPOINT, {
-      method: 'POST', signal: AbortSignal.timeout(50_000),
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY.trim() },
-      body: JSON.stringify({
-        model: config.model, input, store: false,
-        generation_config: { temperature: 0, thinking_level: 'low', max_output_tokens: 12_000 },
-        response_format: { type: 'text', mime_type: 'application/json', schema: OCR_SCHEMA },
-      }),
-    });
-  } catch (error) {
-    throw transportFailure(error);
+  let lastFailure;
+  for (let i = 0; i < apiKeys.length; i++) {
+    const activeKey = apiKeys[i];
+    try {
+      response = await fetchImpl(ENDPOINT, {
+        method: 'POST', signal: AbortSignal.timeout(50_000),
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': activeKey },
+        body: JSON.stringify({
+          model: config.model, input, store: false,
+          generation_config: { temperature: 0, thinking_level: 'low', max_output_tokens: 12_000 },
+          response_format: { type: 'text', mime_type: 'application/json', schema: OCR_SCHEMA },
+        }),
+      });
+    } catch (error) {
+      if (i < apiKeys.length - 1) {
+        continue;
+      }
+      throw transportFailure(error);
+    }
+    if (!response.ok) {
+      let data;
+      try { data = await readLimited(response, 16 * 1024); } catch {}
+      const diagnostic = providerFailure(response, data);
+      const quota = diagnostic.quotaStatus;
+      const message = [401, 403].includes(response.status) ? 'Gemini rejected the API key or model access.' :
+        response.status === 402 ? 'Gemini reports depleted billing credits. Check billing in Google AI Studio.' :
+        response.status === 429 ? (quota === 'token_limit_reached' ?
+          'Gemini reports a token quota limit was reached. Check usage and limits in Google AI Studio.' :
+          'Gemini reports a quota or rate limit was reached. This does not confirm token exhaustion. Check Google AI Studio.') :
+        response.status === 404 ? 'The configured OCR_MODEL is unavailable. Check your model access.' : 'Gemini could not process this board image.';
+      const retry = diagnostic.retryAfterSeconds == null ? '' : ` Retry after ${diagnostic.retryAfterSeconds} seconds.`;
+      lastFailure = requestFailure(`${message} (HTTP ${response.status})${retry}`, response.status === 429 ? 429 : 502,
+        'ocr_provider_error', { reason: 'provider_error', httpStatus: response.status, ...diagnostic });
+
+      // If rate limited (429) or authentication failed (401/403) and another key is available, try fallback key!
+      if ([401, 403, 429].includes(response.status) && i < apiKeys.length - 1) {
+        continue;
+      }
+      throw lastFailure;
+    }
+    break;
   }
-  if (!response.ok) {
-    let data;
-    // Error payloads can contain quota details. Consume a bounded body but never log it.
-    try { data = await readLimited(response, 16 * 1024); } catch {}
-    const diagnostic = providerFailure(response, data);
-    const quota = diagnostic.quotaStatus;
-    const message = [401, 403].includes(response.status) ? 'Gemini rejected the API key or model access.' :
-      response.status === 402 ? 'Gemini reports depleted billing credits. Check billing in Google AI Studio.' :
-      response.status === 429 ? (quota === 'token_limit_reached' ?
-        'Gemini reports a token quota limit was reached. Check usage and limits in Google AI Studio.' :
-        'Gemini reports a quota or rate limit was reached. This does not confirm token exhaustion. Check Google AI Studio.') :
-      response.status === 404 ? 'The configured OCR_MODEL is unavailable. Check your model access.' : 'Gemini could not process this board image.';
-    const retry = diagnostic.retryAfterSeconds == null ? '' : ` Retry after ${diagnostic.retryAfterSeconds} seconds.`;
-    throw requestFailure(`${message} (HTTP ${response.status})${retry}`, response.status === 429 ? 429 : 502,
-      'ocr_provider_error', { reason: 'provider_error', httpStatus: response.status, ...diagnostic });
-  }
+  if (!response?.ok && lastFailure) throw lastFailure;
   let data;
   let transcription;
   try {

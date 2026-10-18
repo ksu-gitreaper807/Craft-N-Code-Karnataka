@@ -15,7 +15,7 @@ OUTPUT_LIMIT = 16_384
 ALLOWED_HEADERS = {
     "assert.h", "ctype.h", "errno.h", "float.h", "inttypes.h", "limits.h",
     "math.h", "stdbool.h", "stddef.h", "stdint.h", "stdio.h", "stdlib.h",
-    "string.h", "time.h", "stack.h", "linked_list.h", "queue.h", "search.h",
+    "string.h", "time.h", "unistd.h", "stack.h", "linked_list.h", "queue.h", "search.h",
 }
 LIB = Path(__file__).resolve().parent / "lib"
 FLAGS = [

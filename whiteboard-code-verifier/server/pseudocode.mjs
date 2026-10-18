@@ -1,5 +1,5 @@
 import { ocrConfiguration } from './ocr.mjs';
-import { readLimited, providerFailure, tokenUsage } from './gemini-response.mjs';
+import { readLimited, providerFailure, tokenUsage, parseApiKeys } from './gemini-response.mjs';
 import { libraries } from '../src/libraries.js';
 import { validLanguage } from '../src/languages.js';
 import { readFile } from 'node:fs/promises';
@@ -57,7 +57,7 @@ export function pseudocodePrompt(level, headers = '', language = 'c') {
   }[level];
   const target = language === 'python' ? 'Python 3' : 'C11';
   const restrictions = language === 'python' ? 'Use Python 3 and its standard library only, including collections, heapq, bisect or math where useful. Preserve Python indentation. Do not generate C, main(), or C headers.' : `
-Use only these standard headers: stdio.h, stdlib.h, string.h, math.h, stdbool.h, stdint.h, stddef.h, limits.h, float.h, ctype.h, assert.h, errno.h, inttypes.h.
+Use only these standard headers: stdio.h, stdlib.h, string.h, math.h, stdbool.h, stdint.h, stddef.h, limits.h, float.h, ctype.h, assert.h, errno.h, inttypes.h, unistd.h.
 Use #include <header.h> angle brackets for every include, including project headers; quoted and file-path includes are rejected by the local runner.
 Prefer standard C. Only use a project teaching header when the teacher names it. The exact requested header contents follow; use these public signatures and ownership rules without inventing APIs:
 ${headers || '(No project headers requested.)'}
@@ -85,18 +85,33 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
     try { logger({ event, ...diagnostic }); } catch {}
     return diagnostic;
   };
+  const apiKeys = parseApiKeys(env);
+  if (!apiKeys.length) throw fail('Set GEMINI_API_KEY on the API host, then redeploy or restart it.', 503);
+
   let response;
+  let lastFailure;
   try {
-    response = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/interactions', {
-      method: 'POST', signal: AbortSignal.timeout(55_000),
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY.trim() },
-      body: JSON.stringify({ model: config.model, store: false,
-        system_instruction: pseudocodePrompt(body.level, headers, language),
-        input: [{ type: 'text', text: JSON.stringify({ source: body.source, stdin: body.stdin ?? '', compilerOutput: body.compilerOutput ?? '' }) }],
-        generation_config: { temperature: 0, max_output_tokens: 12_000 },
-        response_format: { type: 'text', mime_type: 'application/json', schema },
-      }),
-    });
+    for (let i = 0; i < apiKeys.length; i++) {
+      const activeKey = apiKeys[i];
+      try {
+      response = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/interactions', {
+        method: 'POST', signal: AbortSignal.timeout(55_000),
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': activeKey },
+        body: JSON.stringify({ model: config.model, store: false,
+          system_instruction: pseudocodePrompt(body.level, headers, language),
+          input: [{ type: 'text', text: JSON.stringify({ source: body.source, stdin: body.stdin ?? '', compilerOutput: body.compilerOutput ?? '' }) }],
+          generation_config: { temperature: 0, max_output_tokens: 12_000 },
+          response_format: { type: 'text', mime_type: 'application/json', schema },
+        }),
+      });
+    } catch (error) {
+      if (i < apiKeys.length - 1) continue;
+      const timeout = ['TimeoutError', 'AbortError'].includes(error.name);
+      throw Object.assign(fail(timeout ? 'Gemini assistance timed out. Token/quota exhaustion is unconfirmed.' :
+        'Could not read a response from Gemini. Retry the lesson.', timeout ? 504 : 502), {
+        diagnostic: report('failure', { reason: timeout ? 'timeout' : 'network_error', httpStatus: null, quotaStatus: 'unknown' }),
+      });
+    }
     if (!response.ok) {
       let data;
       try { data = await readLimited(response, 16 * 1024); } catch {}
@@ -104,8 +119,15 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
       const message = response.status === 429 ? 'Gemini reached a quota or rate limit. Check Gemini usage and retry.' :
         response.status === 402 ? 'Gemini reports depleted billing credits.' :
         [401, 403].includes(response.status) ? 'Gemini rejected the API key or model access.' : 'Gemini could not prepare this lesson.';
-      throw Object.assign(fail(`${message} (HTTP ${response.status})`, response.status === 429 ? 429 : 502), { diagnostic });
+      lastFailure = Object.assign(fail(`${message} (HTTP ${response.status})`, response.status === 429 ? 429 : 502), { diagnostic });
+      if ([401, 403, 429].includes(response.status) && i < apiKeys.length - 1) {
+        continue;
+      }
+      throw lastFailure;
     }
+    break;
+  }
+  if (!response?.ok && lastFailure) throw lastFailure;
     let data;
     try { data = await readLimited(response); }
     catch (error) {

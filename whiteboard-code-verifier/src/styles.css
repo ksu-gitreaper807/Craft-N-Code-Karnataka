@@ -290,3 +290,22 @@ pre { margin: 0; font: 11px/1.7 'SFMono-Regular', Consolas, 'Liberation Mono', m
 .toolstrip .language-toggle input { margin: 0 6px 0 0; }
 
 .toolstrip { position: relative; }
+
+/* Whiteboard Tabs */
+.board-tabs { display: flex; align-items: center; gap: 4px; overflow-x: auto; max-width: 320px; }
+.board-tab { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: #eef2ea; border: 1px solid #dce2d6; border-radius: 6px; font-size: 11px; font-weight: 500; color: #46543f; cursor: pointer; user-select: none; transition: all .15s; }
+.board-tab:hover { background: #e2e8dc; }
+.board-tab.active { background: #23563f; color: #fff; border-color: #23563f; }
+.board-tab .tab-close { background: none; border: none; color: inherit; padding: 0 2px; font-size: 12px; line-height: 1; cursor: pointer; opacity: .7; }
+.board-tab .tab-close:hover { opacity: 1; }
+.tab-new { display: grid; place-items: center; width: 26px; height: 26px; background: #fff; border: 1px solid #dce2d6; border-radius: 6px; color: #46543f; cursor: pointer; }
+.tab-new:hover { background: #edf2e9; }
+
+/* Pen Color Swatches */
+.color-swatches { display: flex; align-items: center; gap: 4px; padding: 0 4px; }
+.swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #dce2d6; cursor: pointer; padding: 0; transition: transform .1s; }
+.swatch:hover { transform: scale(1.15); }
+.swatch.selected { box-shadow: 0 0 0 2px #23563f; transform: scale(1.1); }
+
+/* Navigation and Zoom */
+.tool.icon-only { padding: 0 10px; min-width: 38px; justify-content: center; }
