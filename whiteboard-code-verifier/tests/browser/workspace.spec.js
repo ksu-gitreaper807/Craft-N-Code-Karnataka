@@ -148,7 +148,7 @@ test.describe('real Docker execution', () => {
     const code = 'int main(void) { return 0; }';
     await importBoard(page, boardFile({ code }));
     await page.getByRole('button', { name: 'Transcribe whole page' }).click();
-    await expect(page.getByLabel('PROGRAM FRAME', { exact: true })).toContainText('Region 1');
+    await expect(page.getByLabel('PROGRAM FRAME', { exact: true })).toContainText('Selected program #1');
     await openPanel(page);
     await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(code);
     await expect(page.getByRole('alert')).toHaveCount(0);

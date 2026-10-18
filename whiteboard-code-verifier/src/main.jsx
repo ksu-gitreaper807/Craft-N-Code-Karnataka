@@ -16,6 +16,7 @@ import { libraries, standardLibraries } from './libraries.js';
 import { CODE_MODES, PYTHON_CODE_MODES } from './pseudocode.js';
 import { LANGUAGES, languageInfo, languagePayload, validLanguage } from './languages.js';
 import FrameControls from './FrameControls.jsx';
+import ProgramRegions from './ProgramRegions.jsx';
 import WorkspaceLayout from './WorkspaceLayout.jsx';
 import SnapshotHistory from './SnapshotHistory.jsx';
 import TestCases from './TestCases.jsx';
@@ -137,6 +138,8 @@ function App() {
   const casesPanel = useRef(null);
   const editorRef = useRef(null);
   const currentKey = useRef('');
+  const currentFrameId = useRef(frameId);
+  currentFrameId.current = frameId;
   const controller = useRef(null);
   const frames = useMemo(() => framesIn(elements), [elements]);
   const typedProgram = useMemo(() => extractProgram(elements, frameId), [elements, frameId]);
@@ -216,7 +219,7 @@ function App() {
     if (!panelRendered.current) { panelRendered.current = true; return undefined; }
     if (!api || !frameId) return undefined;
     let second;
-    const first = setTimeout(() => { api.refresh(); second = setTimeout(() => fitProgramFrame(api, frameId), 150); }, 500);
+    const first = setTimeout(() => { api.refresh(); second = setTimeout(() => fitProgramFrame(api, currentFrameId.current), 150); }, 500);
     return () => { clearTimeout(first); clearTimeout(second); };
   }, [panelVisible]);
 
@@ -260,6 +263,8 @@ function App() {
   function changeFrame(id) {
     setFrameId(id);
     setEdited(null);
+    setFocusedBoard('primary');
+    if (api) fitProgramFrame(api, id);
   }
 
   function editCode(value) {
@@ -853,11 +858,14 @@ function App() {
                     <span className="dual-board-badge">Left</span>
                   </div>
                 )}
-                <Excalidraw
-                  initialData={{ elements: initial, appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 3, currentItemStrokeColor: CODE_COLOR }, scrollToContent: true }}
-                  excalidrawAPI={setApi} onChange={onChange} theme={theme} name="Boardroom lesson"
-                  UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, toggleTheme: false } }}
-                />
+                <div className="program-canvas">
+                  <Excalidraw
+                    initialData={{ elements: initial, appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 3, currentItemStrokeColor: CODE_COLOR }, scrollToContent: true }}
+                    excalidrawAPI={setApi} onChange={onChange} theme={theme} name="Boardroom lesson"
+                    UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, toggleTheme: false } }}
+                  />
+                  <ProgramRegions api={api} frames={frames} selectedId={frameId} />
+                </div>
               </div>
 
               {dualMode && (
@@ -905,7 +913,7 @@ function App() {
               </fieldset>
               <div className="tool-group tool-frame">
                 <label className="sr-only" htmlFor="program-frame">PROGRAM FRAME</label>
-                <select id="program-frame" className="frame-select" value={frameId} title={lesson?.description} disabled={busy} onChange={(event) => changeFrame(event.target.value)}>{!frames.length && <option value="">No region yet</option>}{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.name || 'Selected program'}</option>)}</select>
+                <select id="program-frame" className="frame-select" value={frameId} title={lesson?.description} disabled={busy} onChange={(event) => changeFrame(event.target.value)}>{!frames.length && <option value="">No region yet</option>}{frames.map((frame, index) => <option key={frame.id} value={frame.id} title={frame.name || undefined}>Selected program #{index + 1}</option>)}</select>
               </div>
               <div className="tool-group mode-control">
                 <div className="mode-slider" style={{ '--mode': pseudoLevel - 1 }}>
