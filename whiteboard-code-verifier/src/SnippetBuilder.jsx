@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { PRESETS, ZONES, hasMain, sanitizeTemplate, validCustomLine, wrapParts } from './template.js';
+import { PRESETS, ZONES, sanitizeTemplate, validCustomLine, wrapParts } from './template.js';
 
 const firstLine = (item) => item.includes('\n') ? `${item.split('\n')[0]} …` : item;
 
@@ -49,8 +49,7 @@ export default function SnippetBuilder({ open, template, snippet, enabled, onApp
     } catch { /* ignore drops that did not come from the palette */ }
   };
 
-  const wholeProgram = hasMain(snippet);
-  const parts = wrapParts(snippet.trim() && !wholeProgram ? snippet : '// your snippet goes here', draft);
+  const parts = wrapParts(snippet.trim() ? snippet : '// your snippet goes here', draft);
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div className="builder" role="dialog" aria-modal="true" aria-labelledby="builder-title" tabIndex={-1} ref={dialog}>
       <header className="builder-head">
@@ -87,13 +86,12 @@ export default function SnippetBuilder({ open, template, snippet, enabled, onApp
               <button className="quiet-button" onClick={() => addCustom(zone.key)}>Add</button>
             </div>
           </div>)}
-          <div className="zone zone-main"><h4>main()</h4><p>Your snippet from the board goes here.</p></div>
+          <div className="zone zone-main"><h4>Your snippet</h4><p>Your lines from the board go below the template. When you run, Gemini arranges them into helper functions and, if needed, main(). It never fixes errors.</p></div>
         </section>
         <section className="builder-preview" aria-label="Full program preview">
           <h3>Full program that will run</h3>
           <pre><code>{parts.before}{'\n'}<mark>{parts.body}</mark>{'\n'}{parts.after}</code></pre>
-          {wholeProgram && <p className="panel-help">The board currently holds a full program with main(), so it runs as written. This preview uses a placeholder instead.</p>}
-          <p className="panel-help">You always see the whole program before it runs, and you can edit it. Compiler errors point at these lines.</p>
+          <p className="panel-help">The template holds only headers, globals and helpers: no main(). The organized program Gemini produces is shown with the results.</p>
         </section>
       </div>
       <footer className="builder-foot">
