@@ -16,6 +16,10 @@ async function prepare(page, { gemini = true } = {}) {
   await openPanel(page);
 }
 
+// Snippet mode asks Gemini to organize the code first; this stub wraps loose lines in main() and changes nothing else.
+const organize = (body) => ({ source: `int main() {\n${body.source}\nreturn 0;\n}`, explanation: 'Wrapped the statements in main().', issues: [],
+  level: 2, structure: true, provider: 'gemini', model: 'test-fixture', durationMs: 1 });
+
 async function mode(page, number) {
   const slider = page.getByRole('slider', { name: 'Code mode' });
   await slider.focus();
@@ -23,9 +27,9 @@ async function mode(page, number) {
   for (let i = 1; i < number; i++) await slider.press('ArrowRight');
 }
 
-test('Full program and Snippet compile without calling Gemini, and a successful run offers no fix', async ({ page }) => {
+test('Full program never calls Gemini, Snippet asks Gemini only to organize before compiling, and success offers no fix', async ({ page }) => {
   const runs = [], calls = [];
-  await page.route('**/api/pseudocode', (route) => { calls.push(route.request().postDataJSON()); return route.fulfill({ json: { ...response, level: 1 } }); });
+  await page.route('**/api/pseudocode', (route) => { const body = route.request().postDataJSON(); calls.push(body); return route.fulfill({ json: body.structure ? organize(body) : { ...response, level: 1 } }); });
   await page.route('**/api/run', (route) => { runs.push(route.request().postDataJSON()); return route.fulfill({ json: compiled }); });
   await prepare(page);
   await page.getByLabel(/CODE THAT RUNS/).fill('int main(void) { return 0; }');
@@ -41,8 +45,10 @@ test('Full program and Snippet compile without calling Gemini, and a successful 
   await expect(page.getByRole('button', { name: 'Edit template' })).toBeVisible();
   await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
   await expect(page.locator('.terminal pre')).toHaveText('5\n');
-  expect(calls).toHaveLength(0);
-  expect(runs.map((run) => run.source)).toEqual(['int main(void) { return 0; }', 'puts("snippet");']);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ source: 'puts("snippet");', level: 2, structure: true, templateContext: '' });
+  expect(runs.map((run) => run.source)).toEqual(['int main(void) { return 0; }', 'int main() {\nputs("snippet");\nreturn 0;\n}']);
+  await expect(page.getByLabel('Organized C++', { exact: true })).toContainText('int main()');
 });
 
 test('Algorithm mode asks Gemini, runs the generated code, and keeps the board and editor', async ({ page }) => {
@@ -73,7 +79,7 @@ for (const number of [1, 2, 3]) {
     await page.route('**/api/pseudocode', (route) => {
       const body = route.request().postDataJSON();
       calls.push(body);
-      return route.fulfill({ json: { ...response, level: body.level } });
+      return route.fulfill({ json: body.structure ? { ...organize(body), source: body.source } : { ...response, level: body.level } });
     });
     await page.route('**/api/run', (route) => {
       runs.push(route.request().postDataJSON());
@@ -86,7 +92,7 @@ for (const number of [1, 2, 3]) {
     await mode(page, number);
     await page.getByRole('button', { name: number === 3 ? 'Generate & run' : 'Verify & run', exact: true }).click();
     await expect(page.locator('.result-status')).toContainText('Check the syntax');
-    expect(calls).toHaveLength(number === 3 ? 1 : 0);
+    expect(calls).toHaveLength(number === 1 ? 0 : 1);
     const fix = page.getByRole('button', { name: 'Ask Gemini to fix' });
     await expect(fix).toBeEnabled();
     await fix.click();
@@ -204,7 +210,9 @@ test('template mode offers an optional scope fix after real C++ compilation fail
   const fixed = '#include <stdio.h>\ntemplate<typename T>\nT twice(T value) { return value + value; }\nstruct Result { int value; };\nclass Printer { public: static void show(int value) { printf("%d\\n", value); } };\nint main() { Result result{twice(3)}; Printer::show(result.value); }';
   const requests = [];
   await page.route('**/api/pseudocode', route => {
-    requests.push(route.request().postDataJSON());
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.structure) return route.fulfill({ json: organize(body) });
     return route.fulfill({ json: { ...response, source: fixed, level: 1,
       explanation: 'Moved the function template and declarations to namespace scope, keeping the calls in main.' } });
   });
@@ -212,17 +220,19 @@ test('template mode offers an optional scope fix after real C++ compilation fail
   await importBoard(page, boardFile({ code: snippet, stdin: '2\n' }));
   await mode(page, 2);
   const wrapped = await page.getByLabel(/CODE THAT RUNS/).inputValue();
-  expect(wrapped.indexOf('int main')).toBeLessThan(wrapped.indexOf('template<typename T>'));
+  expect(wrapped).not.toContain('int main');
   await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
   await expect(page.locator('.result-status')).toContainText('Check the syntax');
-  expect(requests).toHaveLength(0);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({ source: snippet, structure: true, templateContext: '#include <stdio.h>' });
+  const organized = `#include <stdio.h>\n\nint main() {\n${snippet}\nreturn 0;\n}\n`;
   await expect(page.locator('.fix-callout')).toContainText('correct scope');
   await page.getByRole('button', { name: 'Ask Gemini to fix', exact: true }).click();
   await expect(page.locator('.result-status')).toContainText('Program completed');
   await expect(page.locator('.terminal pre')).toHaveText('6\n');
-  expect(requests).toHaveLength(1);
-  expect(requests[0]).toMatchObject({ source: wrapped, stdin: '2\n', level: 1, templateMode: true });
-  expect(requests[0].compilerOutput).toContain('block scope');
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toMatchObject({ source: organized, stdin: '2\n', level: 1, templateMode: true });
+  expect(requests[1].compilerOutput).toContain('block scope');
   await expect(page.getByLabel('Fixed C++', { exact: true })).toHaveText(fixed);
   await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(wrapped);
   await page.getByRole('button', { name: 'Use this fix in the editor' }).click();
@@ -236,8 +246,9 @@ test('template runtime failures keep the ordinary optional fix without scope-rep
     ...compiled, status: 'runtime_error', stdout: '', stderr: 'division by zero',
   } : compiled }));
   await page.route('**/api/pseudocode', route => {
-    calls.push(route.request().postDataJSON());
-    return route.fulfill({ json: { ...response, level: 1 } });
+    const body = route.request().postDataJSON();
+    calls.push(body);
+    return route.fulfill({ json: body.structure ? { ...organize(body), source: body.source } : { ...response, level: 1 } });
   });
   await prepare(page);
   await mode(page, 2);
@@ -246,6 +257,7 @@ test('template runtime failures keep the ordinary optional fix without scope-rep
   await expect(page.locator('.fix-callout')).not.toContainText('Template compile failed');
   await page.getByRole('button', { name: 'Ask Gemini to fix' }).click();
   await expect(page.locator('.terminal pre')).toHaveText('5\n');
-  expect(calls[0].compilerOutput).toContain('division by zero');
-  expect(calls[0].templateMode).toBeUndefined();
+  expect(calls[0].structure).toBe(true);
+  expect(calls[1].compilerOutput).toContain('division by zero');
+  expect(calls[1].templateMode).toBeUndefined();
 });

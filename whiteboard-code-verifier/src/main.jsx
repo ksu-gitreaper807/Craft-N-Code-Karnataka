@@ -9,7 +9,7 @@ import HandwritingPanel from './HandwritingPanel.jsx';
 import CodeEditor from './CodeEditor.jsx';
 import SnippetBuilder from './SnippetBuilder.jsx';
 import DrawToolbar from './DrawToolbar.jsx';
-import { composeSource, loadTemplate, saveTemplate } from './template.js';
+import { checkStructure, composeSource, loadTemplate, saveTemplate, splitPreamble, templateBlock } from './template.js';
 import { lessons } from './lessons.js';
 import { libraries, standardLibraries } from './libraries.js';
 import { CODE_MODES, PYTHON_CODE_MODES } from './pseudocode.js';
@@ -331,7 +331,27 @@ function App() {
       return data;
     }
     try {
-      // Full program and Snippet compile exactly what is in the editor; only Algorithm asks Gemini to write code.
+      // C++ Snippet mode: Gemini only organizes the snippet into helpers and an entry point, on every run, before compiling.
+      if (level === 2 && language === 'c') {
+        setPhase('structure');
+        const { preamble: context, body: snippet } = edited !== null ? splitPreamble(edited) : { preamble: templateBlock(template), body: liveProgram.source };
+        let structured;
+        try {
+          structured = await requestJson('/api/pseudocode', { source: snippet, stdin: submitted.stdin, level: 2, structure: true, templateContext: context, ...languagePayload(language) }, 65_000);
+        } catch (caught) {
+          const reason = caught.name === 'AbortError' ? 'The request timed out.' : caught.message;
+          throw new Error(`Gemini could not organize the snippet, so nothing was compiled. ${reason}`);
+        }
+        if (!boardUnchanged()) throw new Error('The board changed. Run again for the current selection; the organized snippet was not compiled.');
+        if (typeof structured?.source !== 'string' || !structured.source.trim()) throw new Error('Gemini returned an empty structure, so nothing was compiled. Your code is unchanged.');
+        const check = checkStructure(snippet, structured.source);
+        if (!check.ok) throw new Error(`${check.reason} Nothing was compiled; your code is unchanged.`);
+        const organized = context ? `${context}\n\n${structured.source.replace(/\s+$/, '')}\n` : structured.source;
+        setPseudoDraft({ ...structured, source: organized, originalKey: submittedKey, level, structure: true, entryAdded: check.entryAdded });
+        await compile(organized, true);
+        return;
+      }
+      // Full program (and Python snippets) compile exactly what is in the editor; only Algorithm asks Gemini to write code.
       if (level !== 3) { await compile(submitted.source, false); return; }
       setPhase('gemini');
       const draft = await requestJson('/api/pseudocode', { source: submitted.source, stdin: submitted.stdin, level: 3, ...languagePayload(language) }, 65_000);
@@ -750,8 +770,8 @@ function App() {
     setNotice('Full program mode: the board text runs exactly as written.');
   }
 
-  const runLabel = reading ? 'Reading handwriting…' : running ? phase === 'gemini' ? `Gemini is preparing ${languageLabel}…` : language === 'python' ? 'Checking & running…' : 'Compiling & running…' : hasInk && !recognizedProgram ? 'Read & review handwriting' : pseudoLevel === 3 ? 'Generate & run' : 'Verify & run';
-  const runDisabled = running || reading || !api || !frameId || !(hasInk && !recognizedProgram ? ocrHealth?.available : health?.available) || (pseudoLevel === 3 && !ocrHealth?.available);
+  const runLabel = reading ? 'Reading handwriting…' : running ? phase === 'structure' ? 'Gemini is organizing…' : phase === 'gemini' ? `Gemini is preparing ${languageLabel}…` : language === 'python' ? 'Checking & running…' : 'Compiling & running…' : hasInk && !recognizedProgram ? 'Read & review handwriting' : pseudoLevel === 3 ? 'Generate & run' : 'Verify & run';
+  const runDisabled = running || reading || !api || !frameId || !(hasInk && !recognizedProgram ? ocrHealth?.available : health?.available) || ((pseudoLevel === 3 || (pseudoLevel === 2 && language === 'c')) && !ocrHealth?.available);
 
   function changeLanguage(next) {
     if (next === language || running || reading) return;
@@ -900,7 +920,7 @@ function App() {
               <button className="icon-button" aria-label="Close panel" title="Close panel" onClick={() => setPanelVisible(false)}>×</button>
             </div>
             {hasInk && <p className="handwriting-state">{recognizedProgram ? 'Handwriting reviewed. Ready to compile.' : 'Handwriting needs recognition and teacher confirmation.'}</p>}
-            {pseudoLevel === 3 && ocrHealth && !ocrHealth.available && <p className="runner-notice">Gemini is required in Algorithm mode. {ocrHealth.message}</p>}
+            {(pseudoLevel === 3 || (pseudoLevel === 2 && language === 'c')) && ocrHealth && !ocrHealth.available && <p className="runner-notice">Gemini is required in {pseudoLevel === 3 ? 'Algorithm' : 'Snippet'} mode. {ocrHealth.message}</p>}
             {health && !health.available && <div className="runner-notice"><span>{health.message}</span><button onClick={checkHealth}>Check again</button></div>}
             {error && geminiDiagnostic && <details className="raw-output"><summary>Gemini assistance diagnostics</summary><pre>{JSON.stringify(geminiDiagnostic, null, 2)}</pre><a href="https://aistudio.google.com/usage" target="_blank" rel="noreferrer">Check Gemini usage and limits</a></details>}
 
@@ -952,7 +972,7 @@ function App() {
               {tab === 'output' && <>
                 {stale && <div className="stale-notice">{edited !== null ? 'The code changed. Run again to update these results.' : 'The board changed. Run again to update these results.'}</div>}
                 {!result && !running && <div className="empty-state"><div className="terminal-glyph">&gt;_</div><h3>Let the code do the talking.</h3><p>Output appears here. Errors are underlined in the code above.</p><span>{language === 'python' ? 'Python interpreter' : 'C++ compiler'} · real output</span></div>}
-                {running && <div className="empty-state" role="status"><div className="terminal-glyph">…</div><h3>{phase === 'gemini' ? 'Preparing the lesson with Gemini' : 'Testing the lesson'}</h3><p>{phase === 'gemini' ? `Reading your selected code or algorithm and preparing ${languageLabel}.` : `Checking ${languageLabel} and running the program.`}</p></div>}
+                {running && <div className="empty-state" role="status"><div className="terminal-glyph">…</div><h3>{phase === 'structure' ? 'Organizing the snippet with Gemini' : phase === 'gemini' ? 'Preparing the lesson with Gemini' : 'Testing the lesson'}</h3><p>{phase === 'structure' ? 'Gemini is arranging your helpers and entry point. It does not fix errors.' : phase === 'gemini' ? `Reading your selected code or algorithm and preparing ${languageLabel}.` : `Checking ${languageLabel} and running the program.`}</p></div>}
                 {result && <div aria-live="polite"><div className={`result-status ${result.status === 'success' ? 'passed' : 'failed'}`}><span>{result.status === 'success' ? '✓' : '!'}</span><strong>{labels[result.status] ?? result.status}</strong><small>{result.durationMs} ms</small></div>
                   {result.status !== 'success' && !stale && <div className="fix-callout">
                     <p>{result.fixed ? 'The corrected version still has an issue.' : result.level === 2 && result.status === 'compile_error' && language === 'c' ? 'Template compile failed? Gemini can move templates, functions, classes, and structs to the correct scope and run the corrected program.' : 'Want Gemini to correct this and run the fixed version?'}</p>
@@ -967,13 +987,13 @@ function App() {
                   {(result.stderr || result.compilerOutput) && <details className="raw-output"><summary>Full compiler & runtime messages</summary><pre>{[result.compilerOutput, result.stderr].filter(Boolean).join('\n')}</pre></details>}
                 </div>}
                 {currentDraft && <section className="pseudocode-review" aria-label={`Gemini ${languageLabel} proposal`}>
-                  <h3>{currentDraft.fix ? 'Gemini fix' : `Gemini ${languageLabel} · demonstration`}</h3>
+                  <h3>{currentDraft.fix ? 'Gemini fix' : currentDraft.structure ? 'Gemini structure · organized snippet' : `Gemini ${languageLabel} · demonstration`}</h3>
                   <p className="panel-help">{currentDraft.explanation}</p>
                   {currentDraft.issues.length > 0 && <ul className="pseudocode-issues">{currentDraft.issues.map((issue, index) => <li key={index}>{issue.line ? `Original line ${issue.line}: ` : 'Assumption: '}{issue.message}</li>)}</ul>}
-                  <p className="panel-help">{currentDraft.fix ? 'Gemini corrected the code that failed; this version was run. Your board and editor are unchanged.' : 'The program below is sent to the runner. Your writing stays on the board.'}</p>
-                  <pre className="library-source" aria-label={currentDraft.fix ? `Fixed ${languageLabel}` : `Generated ${languageLabel}`}>{currentDraft.source}</pre>
+                  <p className="panel-help">{currentDraft.fix ? 'Gemini corrected the code that failed; this version was run. Your board and editor are unchanged.' : currentDraft.structure ? `Gemini only arranged your code${currentDraft.entryAdded ? ' and added an int main() entry point' : ''}; nothing was corrected. This exact program was compiled, and errors refer to its lines.` : 'The program below is sent to the runner. Your writing stays on the board.'}</p>
+                  <pre className="library-source" aria-label={currentDraft.fix ? `Fixed ${languageLabel}` : currentDraft.structure ? `Organized ${languageLabel}` : `Generated ${languageLabel}`}>{currentDraft.source}</pre>
                   {currentDraft.fix && <button className="quiet-button" onClick={() => editCode(currentDraft.source)} disabled={running || reading}>Use this fix in the editor</button>}
-                  {!hasInk && <button className="quiet-button" onClick={usePseudoDraft} disabled={running || reading}>Use this {languageLabel} on board</button>}
+                  {!hasInk && !currentDraft.structure && <button className="quiet-button" onClick={usePseudoDraft} disabled={running || reading}>Use this {languageLabel} on board</button>}
                   <p className="ocr-provenance">{currentDraft.provider} · {currentDraft.model} · {currentDraft.durationMs} ms</p>
                 </section>}
               </>}

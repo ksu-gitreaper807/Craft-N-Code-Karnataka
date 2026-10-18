@@ -116,3 +116,28 @@ test('template fixes receive assembled code and compiler evidence with C++ scope
     assert.throws(() => validatePseudocode({ source, level: 1, ...invalid }), /Template fixes/);
   }
 });
+
+test('snippet structure requests send only the snippet and template, with organize-only instructions', async () => {
+  let sent;
+  const body = { level: 2, structure: true, source: 'Stack s;\nstack_init(&s);', stdin: '', templateContext: '#include <stdio.h>\n#include <stack.h>' };
+  const result = await assistPseudocode(body, { env, logger: () => {}, readHeader: async (file) => `/* ${file} */`, fetchImpl: async (url, options) => {
+    sent = JSON.parse(options.body);
+    return reply({ source: 'int main() {\nStack s;\nstack_init(&s);\nreturn 0;\n}', explanation: 'Added main.', issues: [] });
+  } });
+  assert.deepEqual(JSON.parse(sent.input[0].text), { source: body.source, template: body.templateContext });
+  assert.match(sent.system_instruction, /not a debugger or syntax fixer/);
+  assert.match(sent.system_instruction, /Do not correct syntax errors/);
+  assert.match(sent.system_instruction, /do not add main\(\)/);
+  assert.match(sent.system_instruction, /stack\.h \*\//);
+  assert.equal(result.structure, true);
+  assert.equal(result.level, 2);
+});
+
+test('structure requests are limited to C++ snippet mode', () => {
+  assert.doesNotThrow(() => validatePseudocode({ level: 2, structure: true, source: 'x();' }));
+  for (const body of [{ level: 1, structure: true, source: 'x' }, { level: 3, structure: true, source: 'x' },
+    { level: 2, structure: true, source: 'x', language: 'python' }, { level: 2, structure: 'yes', source: 'x' },
+    { level: 2, structure: true, source: 'x', templateContext: 5 }, { level: 2, structure: true, source: 'x', templateContext: 'x'.repeat(16385) }]) {
+    assert.throws(() => validatePseudocode(body));
+  }
+});
