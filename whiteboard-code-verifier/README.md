@@ -264,3 +264,10 @@ To roll back the application, deploy its previous commit and rebuild the local r
 
 
 In **Snippet (template) mode**, a failed compile offers **Ask Gemini to fix**. The optional request includes the assembled program and real compiler messages. Gemini can move function/class templates, free functions, and declarations to the correct scope while keeping executable statements in `main()`, preserving existing template helpers and stdin. The corrected full program is compiled separately and shown with an explanation; **Use this fix in the editor** adopts it explicitly. No AI request is made just for running template mode.
+
+
+## Cookie sign-in
+
+Keep `BOARDROOM_API_TOKEN` in the server environment. Enter it once in **API ACCESS TOKEN** to sign in for eight hours. Subsequent API calls authenticate with an HttpOnly cookie; **Sign out** clears the cookie, and expiration brings back the sign-in form. The previous browser-readable session-storage token is removed when the updated app loads. `POST /api/session` signs in, `GET /api/session` reports session status, and `DELETE /api/session` signs out. No extra environment variable is needed. Rotating the server token invalidates existing sessions.
+
+Bearer authentication remains supported for scripts and older clients during migration. Existing server settings continue to work; an older deployment can still use bearer auth after rollback, but users must enter their token again. Cookies require same-origin or same-site HTTPS hosting for the frontend and API. Local loopback HTTP uses a non-Secure development cookie. Sign-out clears this browser's cookie; it does not revoke copied session cookies elsewhere before their eight-hour expiry.

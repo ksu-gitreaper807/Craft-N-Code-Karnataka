@@ -242,3 +242,20 @@ test('Python API passes the selected language through readiness and execution, a
   assert.equal((await post(base, { source: 'x', language: 'javascript' })).status, 400);
   assert.equal((await base('/api/health?language=javascript')).status, 400);
 });
+
+test('local API exchanges a token for a cookie and accepts cookie-authenticated requests', async t => {
+  const apiToken = 'local-test-secret';
+  const base = await start(t, { apiToken, health: async () => ({ available: true }) });
+  const signedIn = await base('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' }, body: JSON.stringify({ token: apiToken }) });
+  assert.equal(signedIn.status, 200);
+  assert.match(signedIn.headers['set-cookie'], /HttpOnly; SameSite=Strict/);
+  assert.ok(!signedIn.headers['set-cookie'].includes('Secure'));
+  assert.equal(signedIn.headers['access-control-allow-credentials'], 'true');
+  const cookie = signedIn.headers['set-cookie'].split(';')[0];
+  assert.equal((await base('/api/health', { headers: { Cookie: cookie } })).status, 200);
+  assert.equal((await base('/api/health')).status, 401);
+  assert.equal((await base('/api/health', { headers: { Cookie: cookie, 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+  assert.equal((await base('/api/health', { headers: { Authorization: `Bearer ${apiToken}`, Origin: 'http://127.0.0.1:5173', 'Sec-Fetch-Site': 'cross-site' } })).status, 200);
+  const signedOut = await base('/api/session', { method: 'DELETE' });
+  assert.match(signedOut.headers['set-cookie'], /Max-Age=0/);
+});

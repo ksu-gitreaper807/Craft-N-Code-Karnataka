@@ -18,7 +18,7 @@ import FrameControls from './FrameControls.jsx';
 import WorkspaceLayout from './WorkspaceLayout.jsx';
 import SnapshotHistory from './SnapshotHistory.jsx';
 import TestCases from './TestCases.jsx';
-import { readApiJson, apiFetch, hasApiToken, setApiToken } from './api.js';
+import { readApiJson, apiFetch, connectApi, disconnectApi } from './api.js';
 import stackHeader from '../runner/lib/stack.h?raw';
 import listHeader from '../runner/lib/linked_list.h?raw';
 import queueHeader from '../runner/lib/queue.h?raw';
@@ -92,6 +92,8 @@ function App() {
   const [snapshotMessage, setSnapshotMessage] = useState('Connect the API to check lesson storage.');
   const [apiAuthRequired, setApiAuthRequired] = useState(false);
   const [apiTokenDraft, setApiTokenDraft] = useState('');
+  const [sessionActive, setSessionActive] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   const [reading, setReading] = useState(false);
   const [confirmedOcr, setConfirmedOcr] = useState(null);
   const [running, setRunning] = useState(false);
@@ -177,6 +179,7 @@ function App() {
       setSnapshotAvailable(data.snapshots?.available !== false);
       setSnapshotMessage(data.snapshots?.message ?? 'Lesson history is unavailable. You can download this board from the top bar.');
       setApiAuthRequired(false);
+      setSessionActive(Boolean(data.session?.authenticated));
       setHealth(data.runner);
       setOcrHealth(data.ocr);
     } catch (caught) {
@@ -185,12 +188,22 @@ function App() {
       const message = authRequired ? 'The Boardroom API needs a valid access token.' : caught.message && caught.message !== 'Failed to fetch' ? caught.message : local ? 'Boardroom API is offline. Start it with npm run dev or npm start.' :
         'This site has no Boardroom API connection. Board editing and downloads work; verification and handwriting recognition need the hosted API.';
       setApiAuthRequired(authRequired);
-      if (authRequired) setPanelVisible(true);
+      if (authRequired) { setSessionActive(false); setPanelVisible(true); }
       setSnapshotAvailable(false);
       setHealth({ available: false, message });
       setOcrHealth({ available: false, message });
     }
   }, [language]);
+  useEffect(() => {
+    const expired = () => {
+      const message = 'Your session expired. Sign in to continue.';
+      setApiAuthRequired(true); setSessionActive(false); setPanelVisible(true);
+      setHealth({ available: false, message }); setOcrHealth({ available: false, message });
+    };
+    window.addEventListener('boardroom-auth-required', expired);
+    return () => window.removeEventListener('boardroom-auth-required', expired);
+  }, []);
+
   useEffect(() => { checkHealth(); }, [checkHealth]);
   useEffect(() => () => controller.current?.abort(), []);
   useEffect(() => {
@@ -773,7 +786,19 @@ function App() {
             {hasInk && <p className="handwriting-state">{recognizedProgram ? 'Handwriting reviewed. Ready to compile.' : 'Handwriting needs recognition and teacher confirmation.'}</p>}
             {pseudoLevel === 3 && ocrHealth && !ocrHealth.available && <p className="runner-notice">Gemini is required in Algorithm mode. {ocrHealth.message}</p>}
             {health && !health.available && <div className="runner-notice"><span>{health.message}</span><button onClick={checkHealth}>Check again</button></div>}
-            {apiAuthRequired && <div className="api-access"><label className="field-label" htmlFor="api-access-token">API ACCESS TOKEN</label><input id="api-access-token" type="password" autoComplete="off" value={apiTokenDraft} placeholder={hasApiToken() ? 'Replace the current token' : 'Enter the token from your server'} onChange={(event) => setApiTokenDraft(event.target.value)} /><button className="quiet-button" onClick={() => { setApiToken(apiTokenDraft.trim()); setApiTokenDraft(''); checkHealth(); }}>Connect API</button></div>}
+            {apiAuthRequired && <form className="api-access" onSubmit={async event => {
+              event.preventDefault(); if (signingIn) return;
+              const token = apiTokenDraft.trim(); setApiTokenDraft(''); setSigningIn(true); setError('');
+              try { await connectApi(token); await checkHealth(); }
+              catch (caught) { setError(caught.message); }
+              finally { setSigningIn(false); }
+            }}><label className="field-label" htmlFor="api-access-token">API ACCESS TOKEN</label><input id="api-access-token" type="password" autoComplete="off" value={apiTokenDraft} placeholder="Sign in with the classroom access token" disabled={signingIn} onChange={event => setApiTokenDraft(event.target.value)} /><button className="quiet-button" disabled={signingIn || !apiTokenDraft.trim()} type="submit">{signingIn ? 'Signing in…' : 'Connect API'}</button><p className="panel-help">Sign in once for an eight-hour session on this browser.</p></form>}
+            {sessionActive && <button className="quiet-button" disabled={busy || signingIn} onClick={async () => {
+              setSigningIn(true);
+              try { await disconnectApi(); setSessionActive(false); await checkHealth(); }
+              catch (caught) { setError(caught.message); }
+              finally { setSigningIn(false); }
+            }}>Sign out</button>}
             {error && geminiDiagnostic && <details className="raw-output"><summary>Gemini assistance diagnostics</summary><pre>{JSON.stringify(geminiDiagnostic, null, 2)}</pre><a href="https://aistudio.google.com/usage" target="_blank" rel="noreferrer">Check Gemini usage and limits</a></details>}
 
             <section className="panel-code" aria-label="Code that runs">

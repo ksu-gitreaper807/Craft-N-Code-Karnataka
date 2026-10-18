@@ -1,20 +1,29 @@
-export { readApiJson } from './api-response.js';
+import { readApiJson } from './api-response.js';
+export { readApiJson };
 
-// Vite embeds only the public API origin. The teacher enters the private token at runtime.
+// Only the public origin is embedded. Authentication travels in an HttpOnly cookie.
 const origin = (import.meta.env.VITE_BOARDROOM_API_ORIGIN ?? '').replace(/\/$/, '');
-const tokenKey = 'boardroom-api-token';
+// Remove the previous browser-readable credential during the cookie migration.
+try { sessionStorage.removeItem('boardroom-api-token'); } catch { /* Storage may be blocked. */ }
 
-export function hasApiToken() {
-  try { return Boolean(sessionStorage.getItem(tokenKey)); } catch { return false; }
+export async function apiFetch(path, options = {}) {
+  const response = await fetch(`${origin}${path}`, { ...options, credentials: 'include' });
+  if (response.status === 401 && path !== '/api/session' && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('boardroom-auth-required'));
+  }
+  return response;
 }
 
-export function setApiToken(token) {
-  if (token) sessionStorage.setItem(tokenKey, token);
-  else sessionStorage.removeItem(tokenKey);
+export async function connectApi(token) {
+  const response = await apiFetch('/api/session', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+  const data = await readApiJson(response);
+  if (!response.ok) throw new Error(data.error ?? 'Could not sign in.');
+  return data;
 }
 
-export function apiFetch(path, options = {}) {
-  const headers = new Headers(options.headers);
-  if (hasApiToken()) headers.set('Authorization', `Bearer ${sessionStorage.getItem(tokenKey)}`);
-  return fetch(`${origin}${path}`, { ...options, headers });
+export async function disconnectApi() {
+  const response = await apiFetch('/api/session', { method: 'DELETE' });
+  const data = await readApiJson(response);
+  if (!response.ok) throw new Error(data.error ?? 'Could not sign out.');
 }

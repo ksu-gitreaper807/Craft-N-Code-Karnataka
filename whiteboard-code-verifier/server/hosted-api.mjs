@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { authenticated, hasBearerToken } from './session-auth.mjs';
 
 export function sendJson(res, status, value) {
   res.setHeader('Cache-Control', 'no-store');
@@ -20,10 +20,11 @@ export function authorize(req, res, env = process.env) {
     sendJson(res, 403, { error: 'Use this site to access the API.' });
     return false;
   }
-  const presented = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1] ?? '';
-  const expectedHash = createHash('sha256').update(expected).digest();
-  const presentedHash = createHash('sha256').update(presented).digest();
-  if (!timingSafeEqual(expectedHash, presentedHash)) {
+  if (req.headers['sec-fetch-site'] === 'cross-site' && !hasBearerToken(req, expected)) {
+    sendJson(res, 403, { error: 'Use this site to access the API.' });
+    return false;
+  }
+  if (!authenticated(req, expected)) {
     sendJson(res, 401, { error: 'A valid Boardroom API token is required.' });
     return false;
   }

@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, extname, resolve, sep } from 'node:path';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { authenticated, hasSession, hasBearerToken, sessionOperation } from './session-auth.mjs';
 import { sandboxHealth, runSandbox } from './sandbox.mjs';
 import { hostedRunnerHealth, runHostedProgram } from './hosted-runner.mjs';
 import { loadOcrEnvironment, ocrConfiguration, recognizeHandwriting, OCR_BODY_LIMIT } from './ocr.mjs';
@@ -70,7 +70,7 @@ export function createHandler({ run = defaultRun, health = defaultHealth, now = 
   appOrigin = process.env.BOARDROOM_APP_ORIGIN, apiHost = process.env.BOARDROOM_API_HOST,
   apiToken = process.env.BOARDROOM_API_TOKEN } = {}) {
   if ((appOrigin || apiHost) && !apiToken) throw new Error('BOARDROOM_API_TOKEN is required when exposing the API to a hosted frontend.');
-  const expectedToken = apiToken ? createHash('sha256').update(apiToken).digest() : null;
+  const expectedToken = apiToken?.trim();
   let active = 0;
   let activeOcr = 0;
   let rate = { start: 0, count: 0 };
@@ -90,7 +90,8 @@ export function createHandler({ run = defaultRun, health = defaultHealth, now = 
     if (req.headers.origin) {
       res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
       res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     }
 
@@ -101,16 +102,24 @@ export function createHandler({ run = defaultRun, health = defaultHealth, now = 
       res.writeHead(204);
       return res.end();
     }
+    if (pathname === '/api/session') {
+      try {
+        const body = req.method === 'POST' ? await requestBody(req, 1024) : null;
+        if (req.method === 'POST' && !req.headers['content-type']?.startsWith('application/json')) return send(res, 415, { error: 'Use application/json.' });
+        const result = sessionOperation(req, body, { token: expectedToken, now: now(), allowedOrigin: req.headers.origin });
+        if (result.cookie) res.setHeader('Set-Cookie', result.cookie);
+        return send(res, result.status, result.body);
+      } catch (error) { return send(res, error.status ?? 400, { error: error.message }); }
+    }
     if (pathname.startsWith('/api/') && expectedToken) {
-      const presented = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1] ?? '';
-      const digest = createHash('sha256').update(presented).digest();
-      if (!timingSafeEqual(digest, expectedToken)) return send(res, 401, { error: 'A valid Boardroom API token is required.' });
+      if (req.headers['sec-fetch-site'] === 'cross-site' && !hasBearerToken(req, expectedToken)) return send(res, 403, { error: 'Use this site to access the API.' });
+      if (!authenticated(req, expectedToken, now())) return send(res, 401, { error: 'Sign in to access the Boardroom API.' });
     }
     try {
       if (pathname === '/api/health' && req.method === 'GET') {
         const language = new URL(req.url, 'http://localhost').searchParams.get('language') ?? 'c';
         if (!validLanguage(language)) return send(res, 400, { error: 'Choose C++ or Python.' });
-        return send(res, 200, { service: 'whiteboard-code-verifier', runner: await health(language), ocr: ocrHealth() });
+        return send(res, 200, { service: 'whiteboard-code-verifier', session: { authenticated: hasSession(req, expectedToken, now()) }, runner: await health(language), ocr: ocrHealth() });
       }
       if (pathname === '/api/snapshots/sync' && req.method === 'GET') return send(res, 200, await snapshots.syncStatus());
       if (pathname === '/api/snapshots/sync' && req.method === 'POST') {
