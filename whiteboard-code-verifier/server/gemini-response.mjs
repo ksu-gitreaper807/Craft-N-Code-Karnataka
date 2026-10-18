@@ -63,12 +63,8 @@ export function tokenUsage(usage) {
     .map((name) => [name, usage[name]]));
 }
 
-export function parseApiKeys(env = process.env) {
-  const keys = [
-    ...(env.GEMINI_API_KEYS ? env.GEMINI_API_KEYS.split(/[,;\n\r]+/) : []),
-    ...(env.GEMINI_API_KEY ? env.GEMINI_API_KEY.split(/[,;\n\r]+/) : []),
-    ...(env.GEMINI_FALLBACK_API_KEY ? env.GEMINI_FALLBACK_API_KEY.split(/[,;\n\r]+/) : []),
-  ].map((k) => k.trim()).filter(Boolean);
-  return [...new Set(keys)];
+export function getGeminiApiKey(env = process.env) {
+  const key = env.GEMINI_API_KEY?.trim();
+  return key || null;
 }
 

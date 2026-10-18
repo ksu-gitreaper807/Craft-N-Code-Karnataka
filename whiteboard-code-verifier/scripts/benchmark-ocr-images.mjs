@@ -4,13 +4,13 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { loadEnvFile } from 'node:process';
 import { OCR_PROMPT, OCR_SCHEMA, ocrConfiguration } from '../server/ocr.mjs';
-import { parseApiKeys, providerFailure } from '../server/gemini-response.mjs';
+import { getGeminiApiKey, providerFailure } from '../server/gemini-response.mjs';
 import { scoreTranscript, summarizeScores } from './ocr-benchmark-metrics.mjs';
 
 const [envPath, manifestPath = 'tests/fixtures/ocr/manifest.json', output = '/tmp/boardroom-image-benchmark.json', selectedProfiles] = process.argv.slice(2);
 if (!envPath) throw new Error('Usage: node scripts/benchmark-ocr-images.mjs /path/to/.env [manifest.json] [results.json] [png1800,png900,...]');
 loadEnvFile(resolve(envPath));
-const key = parseApiKeys()[0];
+const key = getGeminiApiKey();
 if (!key) throw new Error('No Gemini key configured.');
 const manifest = JSON.parse(await readFile(resolve(manifestPath), 'utf8'));
 if (!Array.isArray(manifest) || !manifest.length || manifest.length > 10) throw new Error('Use 1–10 samples.');

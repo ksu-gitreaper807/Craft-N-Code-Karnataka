@@ -1,5 +1,5 @@
 import { ocrConfiguration } from './ocr.mjs';
-import { readLimited, providerFailure, tokenUsage, parseApiKeys, GEMINI_REQUEST_BUDGET_MS, remainingGeminiRequestMs } from './gemini-response.mjs';
+import { readLimited, providerFailure, tokenUsage, getGeminiApiKey, GEMINI_REQUEST_BUDGET_MS, remainingGeminiRequestMs } from './gemini-response.mjs';
 import { libraries } from '../src/libraries.js';
 import { validLanguage } from '../src/languages.js';
 import { readFile } from 'node:fs/promises';
@@ -126,52 +126,32 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
     try { logger({ event, ...diagnostic }); } catch {}
     return diagnostic;
   };
-  const apiKeys = parseApiKeys(env);
-  if (!apiKeys.length) throw fail('Set GEMINI_API_KEY on the API host, then redeploy or restart it.', 503);
+  const apiKey = getGeminiApiKey(env);
+  if (!apiKey) throw fail('Set GEMINI_API_KEY on the API host, then redeploy or restart it.', 503);
 
   const requestDeadline = Date.now() + GEMINI_REQUEST_BUDGET_MS;
   let response;
-  let lastFailure;
   try {
-    for (let i = 0; i < apiKeys.length; i++) {
-      const activeKey = apiKeys[i];
-      try {
-      response = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/interactions', {
-        method: 'POST', signal: AbortSignal.timeout(remainingGeminiRequestMs(requestDeadline)),
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': activeKey },
-        body: JSON.stringify({ model: config.model, store: false,
-          system_instruction: body.structure ? structurePrompt(headers) : pseudocodePrompt(body.level, headers, language, body.templateMode === true),
-          input: [{ type: 'text', text: JSON.stringify(body.structure ? { source: body.source, template: body.templateContext ?? '' } :
-            { source: body.source, stdin: body.stdin ?? '', compilerOutput: body.compilerOutput ?? '' }) }],
-          generation_config: { temperature: 0, max_output_tokens: 12_000 },
-          response_format: { type: 'text', mime_type: 'application/json', schema },
-        }),
-      });
-    } catch (error) {
-      if (['TimeoutError', 'AbortError'].includes(error.name)) throw error;
-      if (i < apiKeys.length - 1) continue;
-      const timeout = ['TimeoutError', 'AbortError'].includes(error.name);
-      throw Object.assign(fail(timeout ? 'Gemini assistance timed out. Token/quota exhaustion is unconfirmed.' :
-        'Could not read a response from Gemini. Retry the lesson.', timeout ? 504 : 502), {
-        diagnostic: report('failure', { reason: timeout ? 'timeout' : 'network_error', httpStatus: null, quotaStatus: 'unknown' }),
-      });
-    }
+    response = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/interactions', {
+      method: 'POST', signal: AbortSignal.timeout(remainingGeminiRequestMs(requestDeadline)),
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({ model: config.model, store: false,
+        system_instruction: body.structure ? structurePrompt(headers) : pseudocodePrompt(body.level, headers, language, body.templateMode === true),
+        input: [{ type: 'text', text: JSON.stringify(body.structure ? { source: body.source, template: body.templateContext ?? '' } :
+          { source: body.source, stdin: body.stdin ?? '', compilerOutput: body.compilerOutput ?? '' }) }],
+        generation_config: { temperature: 0, max_output_tokens: 12_000 },
+        response_format: { type: 'text', mime_type: 'application/json', schema },
+      }),
+    });
     if (!response.ok) {
       let data;
       try { data = await readLimited(response, 16 * 1024); } catch {}
       const diagnostic = report('failure', { httpStatus: response.status, ...providerFailure(response, data) });
-      const message = response.status === 429 ? diagnostic.quotaReason === 'zero_quota' ? 'Gemini reports a zero quota for this model in the Google project. Check model access and project billing/quota in AI Studio.' : 'Gemini reached a project quota or rate limit. New keys in the same project share that quota. Check Gemini usage and retry.' :
+      const message = response.status === 429 ? diagnostic.quotaReason === 'zero_quota' ? 'Gemini reports a zero quota for this model in the Google project. Check model access and project billing/quota in AI Studio.' : 'Gemini reached a project quota or rate limit. Check Gemini usage and retry.' :
         response.status === 402 ? 'Gemini reports depleted billing credits.' :
         [401, 403].includes(response.status) ? 'Gemini rejected the API key or model access.' : 'Gemini could not prepare this lesson.';
-      lastFailure = Object.assign(fail(`${message} (HTTP ${response.status})`, response.status === 429 ? 429 : 502), { diagnostic });
-      if ([400, 401, 403, 429].includes(response.status) && i < apiKeys.length - 1) {
-        continue;
-      }
-      throw lastFailure;
+      throw Object.assign(fail(`${message} (HTTP ${response.status})`, response.status === 429 ? 429 : 502), { diagnostic });
     }
-    break;
-  }
-  if (!response?.ok && lastFailure) throw lastFailure;
     let data;
     try { data = await readLimited(response); }
     catch (error) {
@@ -192,7 +172,7 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
       throw error;
     }
     const timeout = ['TimeoutError', 'AbortError'].includes(error.name);
-    throw Object.assign(fail(timeout ? 'Gemini assistance timed out. Token/quota exhaustion is unconfirmed.' :
+    throw Object.assign(fail(timeout ? 'Gemini assistance exceeded its 45-second request budget. Token/quota exhaustion is unconfirmed.' :
       'Could not read a response from Gemini. Retry the lesson.', timeout ? 504 : 502), {
       diagnostic: report('failure', { reason: timeout ? 'timeout' : 'network_error', httpStatus: response?.status ?? null, quotaStatus: 'unknown' }),
     });
