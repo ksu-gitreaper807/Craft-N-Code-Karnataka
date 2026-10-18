@@ -130,7 +130,7 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
         response.status === 402 ? 'Gemini reports depleted billing credits.' :
         [401, 403].includes(response.status) ? 'Gemini rejected the API key or model access.' : 'Gemini could not prepare this lesson.';
       lastFailure = Object.assign(fail(`${message} (HTTP ${response.status})`, response.status === 429 ? 429 : 502), { diagnostic });
-      if ([401, 403, 429].includes(response.status) && i < apiKeys.length - 1) {
+      if ([400, 401, 403, 429].includes(response.status) && i < apiKeys.length - 1) {
         continue;
       }
       throw lastFailure;

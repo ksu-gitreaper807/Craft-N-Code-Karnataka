@@ -178,8 +178,8 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
       lastFailure = requestFailure(`${message} (HTTP ${response.status})${retry}`, response.status === 429 ? 429 : 502,
         'ocr_provider_error', { reason: 'provider_error', httpStatus: response.status, ...diagnostic });
 
-      // If rate limited (429) or authentication failed (401/403) and another key is available, try fallback key!
-      if ([401, 403, 429].includes(response.status) && i < apiKeys.length - 1) {
+      // If rate limited (429), authentication failed (401/403), or invalid key format/argument (400) and another key is available, try fallback key!
+      if ([400, 401, 403, 429].includes(response.status) && i < apiKeys.length - 1) {
         continue;
       }
       throw lastFailure;
