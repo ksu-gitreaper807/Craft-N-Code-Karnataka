@@ -9,8 +9,9 @@ import HandwritingPanel from './HandwritingPanel.jsx';
 import CodeEditor from './CodeEditor.jsx';
 import SnippetBuilder from './SnippetBuilder.jsx';
 import DrawToolbar from './DrawToolbar.jsx';
-import { composeSource, loadTemplate, saveTemplate } from './template.js';
+import { loadTemplate, saveTemplate } from './template.js';
 import { lessons } from './lessons.js';
+import { composeBoardSource } from './linked-list-drawing.js';
 import { libraries, standardLibraries } from './libraries.js';
 import { CODE_MODES, PYTHON_CODE_MODES } from './pseudocode.js';
 import { LANGUAGES, languageInfo, languagePayload, validLanguage } from './languages.js';
@@ -139,7 +140,7 @@ function App() {
   const program = { ...(hasInk ? recognizedProgram ?? EMPTY_PROGRAM : typedProgram), language };
   const signature = programSignature(program, frameId);
   // The board supplies the writing; the editor holds the exact text that is compiled.
-  const composed = composeSource(program.source, template, snippetMode && language === 'c');
+  const composed = composeBoardSource(program.source, template, snippetMode && language === 'c', language, pseudoLevel === 3);
   const runSource = edited ?? composed.source;
   const runKey = `${signature}\u0000${runSource}`;
   currentKey.current = runKey;
@@ -294,7 +295,8 @@ function App() {
     }
     const liveProgram = { ...(liveHasInk ? confirmedOcr.program : extractProgram(liveElements, frameId)), language };
     const level = pseudoLevel;
-    const submittedSource = edited ?? composeSource(liveProgram.source, template, level === 2 && language === 'c').source;
+    const prepared = composeBoardSource(liveProgram.source, template, level === 2 && language === 'c', language, level === 3);
+    const submittedSource = edited ?? prepared.source;
     if (!submittedSource.trim()) { setError('Write code or an algorithm, select its region, or type it in the code editor.'); return; }
     setRunning(true);
     setResult(null);
@@ -326,7 +328,7 @@ function App() {
     }
     try {
       // Full program and Snippet compile exactly what is in the editor; only Algorithm asks Gemini to write code.
-      if (level !== 3) { await compile(submitted.source, false); return; }
+      if (level !== 3) { await compile(submitted.source, Boolean(prepared.drawing && edited === null)); return; }
       setPhase('gemini');
       const draft = await requestJson('/api/pseudocode', { source: submitted.source, stdin: submitted.stdin, level: 3, ...languagePayload(language) }, 65_000);
       if (!boardUnchanged()) throw new Error('The board changed. Run again for the current selection; pending generated code was not executed.');
@@ -776,6 +778,7 @@ function App() {
                 </span>
               </div>
               {boardMovedOn && <p className="code-note">The board changed after your edits. Reset to pick up the board's version.</p>}
+              {composed.drawing && <p className="code-note" role="status">Linked-list drawing: {composed.drawing}. Verify &amp; run builds real nodes using list_from_arrows; the drawing stays unchanged.</p>}
               {composed.skipped && <p className="code-note">Your text already declares main(), so it runs as a full program, not inside the template.</p>}
               <CodeEditor id="source-editor" ref={editorRef} value={runSource} onChange={editCode} diagnostics={shownDiagnostics} disabled={busy}
                 placeholder={hasInk && !recognizedProgram ? 'Confirmed handwriting appears here. You can also type code directly.' : `Type ${languageLabel} here, or write it on the board.`} />

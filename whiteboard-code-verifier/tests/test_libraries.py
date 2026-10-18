@@ -45,6 +45,34 @@ class LibraryTests(unittest.TestCase):
         result = execute_fixture({'source': source})
         self.assertEqual(result['status'], 'success', result)
 
+    def test_arrow_drawings_build_real_nodes_and_invalid_input_preserves_the_list(self):
+        source = r'''#include <linked_list.h>
+#include <assert.h>
+int main() {
+    LinkedList list; list_init(&list);
+    assert(list_from_arrows(&list, "1->3->4->5"));
+    assert(list.size == 4 && list.head->value == 1 && list.tail->value == 5);
+    assert(list.head->next->value == 3 && list.head->next->next->value == 4);
+    assert(list.tail->next == NULL);
+    ListNode *old_head = list.head;
+    const char *invalid[] = {"", " ", "1->", "->1", "1--2", "1->2x", "1->2147483648", "1->-2147483649", "1->99999999999999999999999999", "1->2; puts(1);"};
+    for (const char *text : invalid) {
+        assert(!list_from_arrows(&list, text));
+        assert(list.head == old_head && list.size == 4 && list.tail->value == 5);
+    }
+    assert(!list_from_arrows(&list, NULL));
+    assert(list_from_arrows(&list, " -2 -> 0 -> -2 -> +7 "));
+    assert(list.size == 4 && list.head->value == -2 && list.tail->value == 7);
+    assert(list_from_arrows(&list, "-2147483648->2147483647"));
+    assert(list_front(&list) == INT_MIN && list.tail->value == INT_MAX);
+    assert(list_from_arrows(&list, "5"));
+    assert(list.size == 1 && list.head == list.tail && !list.tail->next);
+    list_free(&list);
+    assert(list_empty(&list) && !list.head && !list.tail);
+}'''
+        result = execute_fixture({'source': source})
+        self.assertEqual(result['status'], 'success', result)
+
     def test_only_public_library_headers_are_allowed(self):
         for header in ["linked_list.h", "queue.h", "search.h"]:
             self.assertIsNone(runner.validate_source(f"#include <{header}>\nint main(void) {{}}"))

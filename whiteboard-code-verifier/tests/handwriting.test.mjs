@@ -47,3 +47,13 @@ test('merges OCR only for handwritten channels and preserves confirmed line maps
   assert.equal(reviewed.lineMap[1].elementId, 'ink');
   assert.equal(diagnosticBoxes([{ line: 1 }], reviewed.lineMap).length, 0);
 });
+
+
+test('captures diagram arrows and invalidates review when an arrow direction or binding changes', () => {
+  const arrow = { ...stroke, type: 'arrow', startArrowhead: null, endArrowhead: 'arrow' };
+  assert.deepEqual(handwritingChannels([arrow], 'frame'), { code: true, stdin: false });
+  const original = inkFingerprint([arrow], 'frame');
+  for (const change of [{ startArrowhead: 'arrow', endArrowhead: null }, { startBinding: { elementId: 'node', focus: 0, gap: 1 } }]) {
+    assert.notEqual(inkFingerprint([{ ...arrow, ...change }], 'frame'), original);
+  }
+});

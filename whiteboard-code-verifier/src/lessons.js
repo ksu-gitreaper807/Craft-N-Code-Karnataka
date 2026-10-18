@@ -24,9 +24,9 @@ export const lessons = [
     source: '#include <stdio.h>\n#include <stack.h>\n\nint main(void) {\n    Stack s;\n    stack_init(&s);\n    int value = stack_pop(&s);\n    printf("Popped: %d\\n", value);\n    stack_free(&s);\n    return 0;\n}',
   },
   {
-    id: 'linked-list', title: 'Follow the links', expectedStatus: 'success', expectedStdout: '10 20 30\nFound: 20\n',
-    description: 'Build a linked list, insert at an index, and traverse its nodes. Try erasing an invalid index.', stdin: '',
-    source: '#include <stdio.h>\n#include <linked_list.h>\n\nint main(void) {\n    LinkedList list;\n    list_init(&list);\n    list_push_back(&list, 10);\n    list_push_back(&list, 30);\n    list_insert(&list, 1, 20);\n    for (const ListNode *node = list.head; node; node = node->next) {\n        printf("%d%s", node->value, node->next ? " " : "\\n");\n    }\n    const ListNode *found = list_find(&list, 20);\n    if (found) printf("Found: %d\\n", found->value);\n    list_free(&list);\n    return 0;\n}',
+    id: 'linked-list', title: 'Follow the links', expectedStatus: 'success', expectedStdout: '1->3->4->5\n',
+    description: 'Turn an arrow drawing into real linked nodes. Change the values or traverse and modify the list.', stdin: '',
+    source: '#include <stdio.h>\n#include <linked_list.h>\n\nint main(void) {\n    LinkedList list;\n    list_init(&list);\n    if (!list_from_arrows(&list, "1->3->4->5")) return 1;\n    for (const ListNode *node = list.head; node; node = node->next) {\n        printf("%d%s", node->value, node->next ? "->" : "\\n");\n    }\n    list_free(&list);\n    return 0;\n}',
   },
   {
     id: 'queue', title: 'First in, first out', expectedStatus: 'success', expectedStdout: '10 20 30\n',

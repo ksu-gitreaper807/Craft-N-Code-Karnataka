@@ -2,6 +2,9 @@
 #define BOARD_LINKED_LIST_H
 
 #include <stddef.h>
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include "board_contract.h"
 
 /* Singly linked integer list. Initialize once; release nodes with list_free. */
@@ -103,6 +106,38 @@ static inline void list_free(LinkedList *list) {
     }
     list_init(list);
 }
+
+/* Parse decimal integers separated by ->. Initialize the destination first.
+ * Success replaces its nodes; invalid input leaves the destination unchanged.
+ * Returns 1 on success, 0 on malformed/out-of-range input. Empty input is invalid.
+ */
+static inline int list_from_arrows_(LinkedList *list, const char *drawing, int line) {
+    if (!list || !drawing) return 0;
+    LinkedList parsed;
+    list_init(&parsed);
+    const char *cursor = drawing;
+    for (;;) {
+        while (isspace((unsigned char)*cursor)) cursor++;
+        const char *digits = cursor;
+        if (*digits == '+' || *digits == '-') digits++;
+        if (!isdigit((unsigned char)*digits)) { list_free(&parsed); return 0; }
+        errno = 0;
+        char *end;
+        long value = strtol(cursor, &end, 10);
+        if (errno == ERANGE || value < INT_MIN || value > INT_MAX) { list_free(&parsed); return 0; }
+        list_push_back_(&parsed, (int)value, line);
+        cursor = end;
+        while (isspace((unsigned char)*cursor)) cursor++;
+        if (!*cursor) break;
+        if (cursor[0] != '-' || cursor[1] != '>') { list_free(&parsed); return 0; }
+        cursor += 2;
+    }
+    list_free(list);
+    *list = parsed;
+    return 1;
+}
+
+#define list_from_arrows(list, drawing) list_from_arrows_((list), (drawing), __LINE__)
 
 #define list_push_front(list, value) list_push_front_((list), (value), __LINE__)
 #define list_push_back(list, value) list_push_back_((list), (value), __LINE__)

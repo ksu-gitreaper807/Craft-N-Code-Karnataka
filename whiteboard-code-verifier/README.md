@@ -271,3 +271,10 @@ In **Snippet (template) mode**, a failed compile offers **Ask Gemini to fix**. T
 Boardroom is public: no login, access token, or session cookie is required for compilation, Gemini OCR/assistance, or lesson snapshots. `BOARDROOM_API_TOKEN` is no longer used; an old value in hosting settings does not restrict access. Gemini and GitHub credentials remain server-side. Browser API requests omit cookies and authorization headers, and old browser-stored tokens are removed on upgrade.
 
 Host/origin checks, request bounds, compiler isolation, and existing local concurrency/rate limits remain in place. `/api/session` is retained only for older clients: it reports public access and expires obsolete session cookies. Users share the configured lesson archive. Rollback to an older authenticated deployment requires its original server access-token configuration and user sign-in again.
+
+
+## Linked lists from drawings
+
+In C++ Full program or Snippet mode, draw a single integer chain such as `1->3->4->5` (pen strokes or black arrow shapes), select it, then **Read & review handwriting** and confirm the recognized chain. **Verify & run** invokes `list_from_arrows()` from `linked_list.h`, creates four linked nodes in order, and prints `1->3->4->5`. The Code panel shows the complete C++ program; the board remains unchanged. Typed arrow chains work too. Algorithm mode and Python retain their existing behavior.
+
+The helper accepts ASCII `->`, signed decimal integers, duplicates and whitespace. Browser-recognized `→` is normalized to `->` before calling it. Initialize the destination with `list_init` first, and release it with `list_free`. `list_from_arrows(&list, "1->3->4->5")` returns 1 on success and replaces any existing nodes; malformed or out-of-range input returns 0 without changing the destination. No links are guessed for missing, uncertain or branched drawings. The Libraries linked-list example includes a runnable invocation.

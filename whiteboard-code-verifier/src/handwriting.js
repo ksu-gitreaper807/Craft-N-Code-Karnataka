@@ -3,12 +3,12 @@ import { CODE_COLOR, INPUT_COLOR, isOverlay } from './board.js';
 export function channelElements(elements, frameId, channel) {
   const colors = channel === 'code' ? [CODE_COLOR, '#000000'] : [INPUT_COLOR];
   return elements.filter((el) => !el.isDeleted && !isOverlay(el) && el.frameId === frameId &&
-    ['freedraw', 'text'].includes(el.type) && colors.includes(el.strokeColor?.toLowerCase()));
+    ['freedraw', 'text', 'arrow'].includes(el.type) && colors.includes(el.strokeColor?.toLowerCase()));
 }
 
 export function handwritingChannels(elements, frameId) {
   return Object.fromEntries(['code', 'stdin'].map((channel) => [channel,
-    channelElements(elements, frameId, channel).some((el) => el.type === 'freedraw'),
+    channelElements(elements, frameId, channel).some((el) => el.type === 'freedraw' || el.type === 'arrow'),
   ]));
 }
 
@@ -18,6 +18,7 @@ export function inkFingerprint(elements, frameId) {
       el.id, el.type, el.x, el.y, el.width, el.height, el.angle, el.strokeColor,
       el.strokeWidth, el.points, el.pressures, el.simulatePressure, el.opacity, el.backgroundColor,
       el.text, el.fontSize, el.fontFamily, el.lineHeight, el.scale,
+      ...(el.type === 'arrow' ? [el.startArrowhead, el.endArrowhead, el.elbowed, el.startBinding, el.endBinding, el.fixedSegments] : []),
     ])),
   ]);
 }

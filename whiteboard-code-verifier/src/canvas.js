@@ -84,7 +84,7 @@ export function fitProgramFrame(api, frameId) {
   if (frame) api.scrollToContent(frame, { fitToContent: true, maxZoom: 1 });
 }
 
-const isInk = (el) => !el.isDeleted && !isOverlay(el) && ['freedraw', 'text'].includes(el.type);
+const isInk = (el) => !el.isDeleted && !isOverlay(el) && ['freedraw', 'text', 'arrow'].includes(el.type);
 // An element belongs to a region when its centre is inside it, so a stray edge stroke is not pulled in.
 const centreIn = (el, rect) => {
   const x = el.x + el.width / 2;
@@ -115,5 +115,5 @@ export function createRegionFrame(api, rect) {
   // Children precede their frame in the element list.
   api.updateScene({ elements: [...current.filter((el) => !members.includes(el)), ...moved, sized] });
   api.setActiveTool({ type: 'selection' });
-  return { id, strokes: members.filter((el) => el.type === 'freedraw').length, texts: members.filter((el) => el.type === 'text').length };
+  return { id, strokes: members.filter((el) => el.type === 'freedraw' || el.type === 'arrow').length, texts: members.filter((el) => el.type === 'text').length };
 }

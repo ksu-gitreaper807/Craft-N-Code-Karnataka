@@ -283,3 +283,32 @@ test('only reduces handwriting captures above the 1800-pixel longest-side limit'
     expect(Math.max(actualWidth, actualHeight)).toBeLessThanOrEqual(1800);
   }
 });
+
+
+test('confirmed arrow drawings invoke list_from_arrows and run real linked nodes', async ({ page }) => {
+  await configureProviderFixture(page);
+  let runs = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/run')) runs++; });
+  await page.route('**/api/ocr', route => route.fulfill({ json: {
+    provider: 'test-fixture', model: 'drawing-fixture', requiresConfirmation: true,
+    code: [fixtureLine('1->3->4->5', 0, { box: null })], stdin: [],
+  } }));
+  const file = boardFile({ code: '1   3   4   5' });
+  const board = JSON.parse(file.buffer.toString());
+  board.elements.push({ id: 'list-arrow', type: 'arrow', frameId: 'frame', x: 80, y: 80,
+    width: 200, height: 0, strokeColor: '#1e1e1e', points: [[0, 0], [200, 0]], startArrowhead: null, endArrowhead: 'arrow' });
+  file.buffer = Buffer.from(JSON.stringify(board));
+  await page.goto('/');
+  await importBoard(page, file);
+  await page.getByRole('button', { name: 'Read & review handwriting', exact: true }).click();
+  await expect(page.getByLabel('Code line 1', { exact: true })).toHaveValue('1->3->4->5');
+  expect(runs).toBe(0);
+  await page.getByRole('checkbox', { name: 'I checked the code and input against the handwriting.' }).check();
+  await page.getByRole('button', { name: 'Use confirmed code', exact: true }).click();
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(/list_from_arrows\(&list, "1->3->4->5"\)/);
+  await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
+  await expect(page.locator('.result-status')).toContainText('Program completed');
+  await expect(page.locator('.terminal pre')).toHaveText('1->3->4->5\n');
+  await expect(page.getByLabel('Automatic snapshot status')).toContainText('Full-board snapshot saved');
+  expect(runs).toBe(1);
+});
