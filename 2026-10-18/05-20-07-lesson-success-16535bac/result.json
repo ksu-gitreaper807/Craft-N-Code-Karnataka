@@ -1,0 +1,1 @@
+{"provenance":"browser-reported","result":{"status":"success","stdout":"","stderr":"","compilerOutput":"","diagnostics":[],"notes":[],"exitCode":0,"durationMs":3122,"engine":"wandbox","language":"c","source":"int main () {\n  return 0;\n}","stdin":"","signature":"[\"Y_GFJqI511ZRUz_yBXtLW\",\"int main () {\\n  return 0;\\n}\",\"\",[null,null,null]]","level":1,"kind":"run"}}
