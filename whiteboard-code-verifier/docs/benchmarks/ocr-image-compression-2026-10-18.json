@@ -1,0 +1,410 @@
+{
+  "date": "2026-10-18",
+  "model": "gemini-3.8-flash",
+  "thinking": "low",
+  "samples": "Two synthetic fixtures; one call per profile/sample. No successful live real-handwriting comparison.",
+  "records": [
+    {
+      "sample": "synthetic-c",
+      "profile": {
+        "edge": 1800,
+        "mime": "image/png"
+      },
+      "captures": [
+        {
+          "channel": "code",
+          "width": 1800,
+          "height": 954,
+          "bytes": 170980,
+          "mime": "image/png"
+        }
+      ],
+      "httpStatus": 200,
+      "score": {
+        "samples": 2,
+        "characters": 108,
+        "characterErrors": 8,
+        "lines": 7,
+        "exactLines": 3,
+        "criticalSymbols": 22,
+        "criticalErrors": 0,
+        "exactSamples": 1,
+        "characterErrorRate": 0.07407407407407407,
+        "exactLineRate": 0.42857142857142855,
+        "criticalSymbolErrorRate": 0
+      },
+      "usage": {
+        "total_tokens": 1473,
+        "total_input_tokens": 1284,
+        "input_tokens_by_modality": [
+          {
+            "modality": "image",
+            "tokens": 1080
+          },
+          {
+            "modality": "text",
+            "tokens": 204
+          }
+        ],
+        "total_cached_tokens": 0,
+        "total_output_tokens": 189,
+        "total_tool_use_tokens": 0,
+        "total_thought_tokens": 0
+      },
+      "status": "success",
+      "durationMs": 6858
+    },
+    {
+      "sample": "synthetic-python",
+      "profile": {
+        "edge": 1800,
+        "mime": "image/png"
+      },
+      "captures": [
+        {
+          "channel": "code",
+          "width": 1800,
+          "height": 630,
+          "bytes": 117000,
+          "mime": "image/png"
+        }
+      ],
+      "httpStatus": 200,
+      "score": {
+        "samples": 2,
+        "characters": 116,
+        "characterErrors": 0,
+        "lines": 6,
+        "exactLines": 6,
+        "criticalSymbols": 11,
+        "criticalErrors": 0,
+        "exactSamples": 2,
+        "characterErrorRate": 0,
+        "exactLineRate": 1,
+        "criticalSymbolErrorRate": 0
+      },
+      "usage": {
+        "total_tokens": 1515,
+        "total_input_tokens": 1268,
+        "input_tokens_by_modality": [
+          {
+            "modality": "image",
+            "tokens": 1064
+          },
+          {
+            "modality": "text",
+            "tokens": 204
+          }
+        ],
+        "total_cached_tokens": 0,
+        "total_output_tokens": 161,
+        "total_tool_use_tokens": 0,
+        "total_thought_tokens": 86
+      },
+      "status": "success",
+      "durationMs": 5432
+    },
+    {
+      "sample": "synthetic-c",
+      "profile": {
+        "edge": 900,
+        "mime": "image/png"
+      },
+      "captures": [
+        {
+          "channel": "code",
+          "width": 900,
+          "height": 477,
+          "bytes": 53289,
+          "mime": "image/png"
+        }
+      ],
+      "httpStatus": 200,
+      "score": {
+        "samples": 2,
+        "characters": 108,
+        "characterErrors": 6,
+        "lines": 7,
+        "exactLines": 1,
+        "criticalSymbols": 22,
+        "criticalErrors": 0,
+        "exactSamples": 1,
+        "characterErrorRate": 0.05555555555555555,
+        "exactLineRate": 0.14285714285714285,
+        "criticalSymbolErrorRate": 0
+      },
+      "usage": {
+        "total_tokens": 1490,
+        "total_input_tokens": 1284,
+        "input_tokens_by_modality": [
+          {
+            "modality": "image",
+            "tokens": 1080
+          },
+          {
+            "modality": "text",
+            "tokens": 204
+          }
+        ],
+        "total_cached_tokens": 0,
+        "total_output_tokens": 206,
+        "total_tool_use_tokens": 0,
+        "total_thought_tokens": 0
+      },
+      "status": "success",
+      "durationMs": 4216
+    },
+    {
+      "sample": "synthetic-python",
+      "profile": {
+        "edge": 900,
+        "mime": "image/png"
+      },
+      "captures": [
+        {
+          "channel": "code",
+          "width": 900,
+          "height": 315,
+          "bytes": 36999,
+          "mime": "image/png"
+        }
+      ],
+      "httpStatus": 200,
+      "score": {
+        "samples": 2,
+        "characters": 116,
+        "characterErrors": 0,
+        "lines": 6,
+        "exactLines": 6,
+        "criticalSymbols": 11,
+        "criticalErrors": 0,
+        "exactSamples": 2,
+        "characterErrorRate": 0,
+        "exactLineRate": 1,
+        "criticalSymbolErrorRate": 0
+      },
+      "usage": {
+        "total_tokens": 1429,
+        "total_input_tokens": 1268,
+        "input_tokens_by_modality": [
+          {
+            "modality": "text",
+            "tokens": 204
+          },
+          {
+            "modality": "image",
+            "tokens": 1064
+          }
+        ],
+        "total_cached_tokens": 0,
+        "total_output_tokens": 161,
+        "total_tool_use_tokens": 0,
+        "total_thought_tokens": 0
+      },
+      "status": "success",
+      "durationMs": 4802
+    },
+    {
+      "sample": "synthetic-c",
+      "profile": {
+        "edge": 1200,
+        "mime": "image/webp",
+        "quality": 0.85
+      },
+      "captures": [
+        {
+          "channel": "code",
+          "width": 1200,
+          "height": 636,
+          "bytes": 14238,
+          "mime": "image/webp"
+        }
+      ],
+      "httpStatus": 200,
+      "score": {
+        "samples": 2,
+        "characters": 108,
+        "characterErrors": 1,
+        "lines": 7,
+        "exactLines": 1,
+        "criticalSymbols": 22,
+        "criticalErrors": 0,
+        "exactSamples": 1,
+        "characterErrorRate": 0.009259259259259259,
+        "exactLineRate": 0.14285714285714285,
+        "criticalSymbolErrorRate": 0
+      },
+      "usage": {
+        "total_tokens": 1435,
+        "total_input_tokens": 1284,
+        "input_tokens_by_modality": [
+          {
+            "modality": "image",
+            "tokens": 1080
+          },
+          {
+            "modality": "text",
+            "tokens": 204
+          }
+        ],
+        "total_cached_tokens": 0,
+        "total_output_tokens": 151,
+        "total_tool_use_tokens": 0,
+        "total_thought_tokens": 0
+      },
+      "status": "success",
+      "durationMs": 12485
+    },
+    {
+      "sample": "synthetic-python",
+      "profile": {
+        "edge": 1200,
+        "mime": "image/webp",
+        "quality": 0.85
+      },
+      "captures": [
+        {
+          "channel": "code",
+          "width": 1200,
+          "height": 420,
+          "bytes": 15028,
+          "mime": "image/webp"
+        }
+      ],
+      "httpStatus": 503,
+      "diagnostic": {
+        "providerStatus": null,
+        "retryAfterSeconds": 30,
+        "quotaStatus": "unknown"
+      },
+      "status": "failure",
+      "reason": "Provider HTTP 503",
+      "durationMs": 5321
+    },
+    {
+      "sample": "synthetic-c",
+      "profile": {
+        "edge": 600,
+        "mime": "image/png"
+      },
+      "captures": [
+        {
+          "channel": "code",
+          "width": 600,
+          "height": 318,
+          "bytes": 27188,
+          "mime": "image/png"
+        }
+      ],
+      "httpStatus": 200,
+      "score": {
+        "samples": 2,
+        "characters": 108,
+        "characterErrors": 0,
+        "lines": 7,
+        "exactLines": 7,
+        "criticalSymbols": 22,
+        "criticalErrors": 0,
+        "exactSamples": 2,
+        "characterErrorRate": 0,
+        "exactLineRate": 1,
+        "criticalSymbolErrorRate": 0
+      },
+      "usage": {
+        "total_tokens": 1473,
+        "total_input_tokens": 1284,
+        "input_tokens_by_modality": [
+          {
+            "modality": "text",
+            "tokens": 204
+          },
+          {
+            "modality": "image",
+            "tokens": 1080
+          }
+        ],
+        "total_cached_tokens": 0,
+        "total_output_tokens": 189,
+        "total_tool_use_tokens": 0,
+        "total_thought_tokens": 0
+      },
+      "status": "success",
+      "durationMs": 6447
+    },
+    {
+      "sample": "synthetic-python",
+      "profile": {
+        "edge": 600,
+        "mime": "image/png"
+      },
+      "captures": [
+        {
+          "channel": "code",
+          "width": 600,
+          "height": 210,
+          "bytes": 19182,
+          "mime": "image/png"
+        }
+      ],
+      "httpStatus": 200,
+      "score": {
+        "samples": 2,
+        "characters": 116,
+        "characterErrors": 0,
+        "lines": 6,
+        "exactLines": 6,
+        "criticalSymbols": 11,
+        "criticalErrors": 0,
+        "exactSamples": 2,
+        "characterErrorRate": 0,
+        "exactLineRate": 1,
+        "criticalSymbolErrorRate": 0
+      },
+      "usage": {
+        "total_tokens": 1665,
+        "total_input_tokens": 1268,
+        "input_tokens_by_modality": [
+          {
+            "modality": "text",
+            "tokens": 204
+          },
+          {
+            "modality": "image",
+            "tokens": 1064
+          }
+        ],
+        "total_cached_tokens": 0,
+        "total_output_tokens": 161,
+        "total_tool_use_tokens": 0,
+        "total_thought_tokens": 236
+      },
+      "status": "success",
+      "durationMs": 5325
+    },
+    {
+      "sample": "synthetic-c",
+      "profile": {
+        "edge": 1200,
+        "mime": "image/png"
+      },
+      "captures": [
+        {
+          "channel": "code",
+          "width": 1200,
+          "height": 636,
+          "bytes": 88295,
+          "mime": "image/png"
+        }
+      ],
+      "httpStatus": 429,
+      "diagnostic": {
+        "providerStatus": null,
+        "retryAfterSeconds": 61387,
+        "quotaStatus": "quota_or_rate_limit_reached"
+      },
+      "status": "failure",
+      "reason": "Provider HTTP 429",
+      "durationMs": 536
+    }
+  ]
+}
