@@ -7,6 +7,7 @@ In the Vercel project, set the root directory to `whiteboard-code-verifier` and 
 | Name | Value |
 | --- | --- |
 | `GEMINI_API_KEY` | Your Google AI Studio key for handwriting recognition. |
+| `GEMINI_API_KEYS` | Optional comma-separated server-side key pool shared by OCR and code assistance; each key has a 30-second per-process cooldown. |
 | `WANDBOX_API_URL` | `https://wandbox.org/api` for Wandbox's public API. |
 | `WANDBOX_CPP_COMPILER` | Optional compiler name; defaults to `gcc-head`. |
 | `WANDBOX_PYTHON_COMPILER` | Optional Python runtime; defaults to `cpython-3.13.8`. |

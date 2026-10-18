@@ -1,5 +1,6 @@
 import { ocrConfiguration } from './ocr.mjs';
 import { readLimited, providerFailure, tokenUsage, parseApiKeys } from './gemini-response.mjs';
+import { requestWithGeminiKeyRotation } from './gemini-key-rotation.mjs';
 import { libraries } from '../src/libraries.js';
 import { validLanguage } from '../src/languages.js';
 import { readFile } from 'node:fs/promises';
@@ -130,12 +131,8 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
   if (!apiKeys.length) throw fail('Set GEMINI_API_KEY on the API host, then redeploy or restart it.', 503);
 
   let response;
-  let lastFailure;
   try {
-    for (let i = 0; i < apiKeys.length; i++) {
-      const activeKey = apiKeys[i];
-      try {
-      response = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    response = await requestWithGeminiKeyRotation(apiKeys, (activeKey) => fetchImpl('https://generativelanguage.googleapis.com/v1beta/interactions', {
         method: 'POST', signal: AbortSignal.timeout(55_000),
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': activeKey },
         body: JSON.stringify({ model: config.model, store: false,
@@ -145,31 +142,16 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
           generation_config: { temperature: 0, max_output_tokens: 12_000 },
           response_format: { type: 'text', mime_type: 'application/json', schema },
         }),
-      });
-    } catch (error) {
-      if (i < apiKeys.length - 1) continue;
-      const timeout = ['TimeoutError', 'AbortError'].includes(error.name);
-      throw Object.assign(fail(timeout ? 'Gemini assistance timed out. Token/quota exhaustion is unconfirmed.' :
-        'Could not read a response from Gemini. Retry the lesson.', timeout ? 504 : 502), {
-        diagnostic: report('failure', { reason: timeout ? 'timeout' : 'network_error', httpStatus: null, quotaStatus: 'unknown' }),
-      });
-    }
+      }));
     if (!response.ok) {
-      let data;
-      try { data = await readLimited(response, 16 * 1024); } catch {}
-      const diagnostic = report('failure', { httpStatus: response.status, ...providerFailure(response, data) });
+      let providerData;
+      try { providerData = await readLimited(response, 16 * 1024); } catch {}
+      const diagnostic = report('failure', { httpStatus: response.status, ...providerFailure(response, providerData) });
       const message = response.status === 429 ? diagnostic.quotaReason === 'zero_quota' ? 'Gemini reports a zero quota for this model in the Google project. Check model access and project billing/quota in AI Studio.' : 'Gemini reached a project quota or rate limit. New keys in the same project share that quota. Check Gemini usage and retry.' :
         response.status === 402 ? 'Gemini reports depleted billing credits.' :
         [401, 403].includes(response.status) ? 'Gemini rejected the API key or model access.' : 'Gemini could not prepare this lesson.';
-      lastFailure = Object.assign(fail(`${message} (HTTP ${response.status})`, response.status === 429 ? 429 : 502), { diagnostic });
-      if ([400, 401, 403, 429].includes(response.status) && i < apiKeys.length - 1) {
-        continue;
-      }
-      throw lastFailure;
+      throw Object.assign(fail(`${message} (HTTP ${response.status})`, response.status === 429 ? 429 : 502), { diagnostic });
     }
-    break;
-  }
-  if (!response?.ok && lastFailure) throw lastFailure;
     let data;
     try { data = await readLimited(response); }
     catch (error) {
@@ -186,7 +168,11 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
     return { ...proposal, level: body.level, language, ...(body.structure ? { structure: true } : {}), provider: 'gemini', model: config.model, durationMs: Math.round(performance.now() - started) };
   } catch (error) {
     if (error.status) {
-      if (!error.diagnostic) error.diagnostic = report('failure', { httpStatus: response?.status ?? null, quotaStatus: 'unknown', reason: 'invalid_response' });
+      if (!error.diagnostic) error.diagnostic = report('failure', {
+        httpStatus: response?.status ?? null, quotaStatus: 'unknown',
+        reason: error.code === 'gemini_keys_cooling' ? 'key_cooldown' : 'invalid_response',
+        ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
+      });
       throw error;
     }
     const timeout = ['TimeoutError', 'AbortError'].includes(error.name);
