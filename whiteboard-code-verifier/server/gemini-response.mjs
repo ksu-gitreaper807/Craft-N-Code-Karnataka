@@ -1,4 +1,12 @@
 // Shared bounded parsing and safe provider diagnostics for Gemini requests.
+export const GEMINI_REQUEST_BUDGET_MS = 45_000;
+
+export function remainingGeminiRequestMs(deadline) {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new DOMException('Gemini request budget elapsed.', 'TimeoutError');
+  return remaining;
+}
+
 export async function readLimited(response, limit = 256 * 1024) {
   let size = 0;
   const chunks = [];

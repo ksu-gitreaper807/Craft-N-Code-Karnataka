@@ -1,5 +1,5 @@
 import { ocrConfiguration } from './ocr.mjs';
-import { readLimited, providerFailure, tokenUsage, parseApiKeys } from './gemini-response.mjs';
+import { readLimited, providerFailure, tokenUsage, parseApiKeys, GEMINI_REQUEST_BUDGET_MS, remainingGeminiRequestMs } from './gemini-response.mjs';
 import { libraries } from '../src/libraries.js';
 import { validLanguage } from '../src/languages.js';
 import { readFile } from 'node:fs/promises';
@@ -129,6 +129,7 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
   const apiKeys = parseApiKeys(env);
   if (!apiKeys.length) throw fail('Set GEMINI_API_KEY on the API host, then redeploy or restart it.', 503);
 
+  const requestDeadline = Date.now() + GEMINI_REQUEST_BUDGET_MS;
   let response;
   let lastFailure;
   try {
@@ -136,7 +137,7 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
       const activeKey = apiKeys[i];
       try {
       response = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/interactions', {
-        method: 'POST', signal: AbortSignal.timeout(55_000),
+        method: 'POST', signal: AbortSignal.timeout(remainingGeminiRequestMs(requestDeadline)),
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': activeKey },
         body: JSON.stringify({ model: config.model, store: false,
           system_instruction: body.structure ? structurePrompt(headers) : pseudocodePrompt(body.level, headers, language, body.templateMode === true),
@@ -147,6 +148,7 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
         }),
       });
     } catch (error) {
+      if (['TimeoutError', 'AbortError'].includes(error.name)) throw error;
       if (i < apiKeys.length - 1) continue;
       const timeout = ['TimeoutError', 'AbortError'].includes(error.name);
       throw Object.assign(fail(timeout ? 'Gemini assistance timed out. Token/quota exhaustion is unconfirmed.' :

@@ -1,4 +1,4 @@
-import { readLimited, providerFailure, tokenUsage, parseApiKeys } from './gemini-response.mjs';
+import { readLimited, providerFailure, tokenUsage, parseApiKeys, GEMINI_REQUEST_BUDGET_MS, remainingGeminiRequestMs } from './gemini-response.mjs';
 import { validLanguage } from '../src/languages.js';
 import { existsSync } from 'node:fs';
 import { loadEnvFile } from 'node:process';
@@ -137,20 +137,21 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
   function transportFailure(error, httpStatus = null) {
     const timeout = ['TimeoutError', 'AbortError'].includes(error.name);
     return requestFailure(timeout ?
-      'Gemini OCR timed out after 50 seconds. Token/quota exhaustion is unconfirmed; check Gemini usage or try a smaller board.' :
+      'Gemini OCR exceeded its 45-second request budget. Token/quota exhaustion is unconfirmed; check Gemini usage or try a smaller board.' :
       'Could not reach Gemini. Token/quota status is unknown; check your network and Gemini usage.',
     timeout ? 504 : 502, 'ocr_unavailable', { reason: timeout ? 'timeout' : 'network_error', httpStatus, quotaStatus: 'unknown' });
   }
   const apiKeys = parseApiKeys(env);
   if (!apiKeys.length) throw fail('Set GEMINI_API_KEY on the API host, then redeploy or restart it.', 503);
 
+  const requestDeadline = Date.now() + GEMINI_REQUEST_BUDGET_MS;
   let response;
   let lastFailure;
   for (let i = 0; i < apiKeys.length; i++) {
     const activeKey = apiKeys[i];
     try {
       response = await fetchImpl(ENDPOINT, {
-        method: 'POST', signal: AbortSignal.timeout(50_000),
+        method: 'POST', signal: AbortSignal.timeout(remainingGeminiRequestMs(requestDeadline)),
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': activeKey },
         body: JSON.stringify({
           model: config.model, input, store: false,
@@ -159,6 +160,7 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
         }),
       });
     } catch (error) {
+      if (['TimeoutError', 'AbortError'].includes(error.name)) throw transportFailure(error);
       if (i < apiKeys.length - 1) {
         continue;
       }
