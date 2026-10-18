@@ -56,6 +56,32 @@ test('a hosting timeout page becomes an OCR timeout with unknown quota and never
   expect(runs).toBe(0);
 });
 
+test('text-only OCR keeps review, literal mistakes and editor diagnostics without invented canvas locations', async ({ page }) => {
+  await configureProviderFixture(page);
+  let runs = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/run')) runs++; });
+  await page.route('**/api/ocr', route => route.fulfill({ json: {
+    provider: 'test-fixture', model: 'compact-fixture', durationMs: 1, requiresConfirmation: true,
+    code: ['int main(void) {', '    return 0', '}'].map((text, index) => ({ text, uncertain: index === 1, box: null, alternatives: [] })), stdin: [],
+  } }));
+  await page.goto('/');
+  await selectWritingRegion(page);
+  await drawStroke(page);
+  await page.getByRole('button', { name: 'Read & review handwriting', exact: true }).click();
+  await expect(page.getByLabel('Code line 2', { exact: true })).toHaveValue('    return 0');
+  await expect(page.locator('.ocr-preview svg')).toHaveCount(0);
+  await expect(page.locator('.handwriting-panel')).toContainText('text-only recognition does not provide line locations');
+  expect(runs).toBe(0);
+  await expect(page.getByRole('button', { name: 'Use confirmed code', exact: true })).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'I checked the code and input against the handwriting.' }).check();
+  await page.getByRole('button', { name: 'Use confirmed code', exact: true }).click();
+  await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
+  await expect(page.locator('.result-status')).toContainText('Check the syntax');
+  await expect(page.locator('.diagnostic').first()).toContainText('expected');
+  await expect(page.getByLabel('Automatic snapshot status')).toContainText('Full-board snapshot saved');
+  expect(runs).toBe(1);
+});
+
 test('captures pen ink, requires edited teacher confirmation, then runs the confirmed C in Docker', async ({ page }, testInfo) => {
   await configureProviderFixture(page);
   let capture;

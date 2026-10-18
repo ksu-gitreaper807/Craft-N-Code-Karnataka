@@ -98,7 +98,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
     {stale && <div className="stale-notice">The ink changed. Read the frame again before confirming.</div>}
     {draft && draft.frameId === frameId && <>
       <p className="ocr-provenance">{draft.raw.provider} · {draft.raw.model} · {draft.raw.durationMs} ms</p>
-      <p className="panel-help">“Check” marks model-reported ambiguity, not a measured confidence score. Preview boxes are approximate.</p>
+      <p className="panel-help">“Check” marks model-reported ambiguity, not a measured confidence score. Compare the text with the captured image; text-only recognition does not provide line locations.</p>
       {['code', 'stdin'].map((channel) => <div className="ocr-channel" key={channel}>
         <h4>{channel === 'code' ? 'Code or algorithm' : 'Standard input'}</h4>
         {draft.captures[channel] && <div className="ocr-preview-scroll"><div className="ocr-preview">

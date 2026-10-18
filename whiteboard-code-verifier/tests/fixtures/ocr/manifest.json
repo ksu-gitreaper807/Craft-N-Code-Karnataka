@@ -1,0 +1,13 @@
+[
+  {
+    "id": "synthetic-c",
+    "codeImage": "synthetic-code.png",
+    "codeText": "#include <stdio.h>\nint main(void) {\n    int n = 0;\n    scanf(\"%d\", n);\n    printf(\"%d\\n\", n)\n    return 0;\n}"
+  },
+  {
+    "id": "synthetic-python",
+    "language": "python",
+    "codeImage": "synthetic-python.png",
+    "codeText": "from collections import deque\n\nvalues = deque([0, 1, 2])\nfor value in values\n    if value != 0:\n        print(value)"
+  }
+]

@@ -21,15 +21,19 @@ if (!manifestPath) {
           typeof sample.codeText !== 'string' || typeof sample.codeImage !== 'string' || !sample.codeImage.trim() ||
           (sample.stdinText != null && typeof sample.stdinText !== 'string') ||
           (sample.stdinImage != null && (typeof sample.stdinImage !== 'string' || !sample.stdinImage.trim())) ||
-          (sample.stdinImage == null) !== (sample.stdinText == null)) {
+          (sample.stdinImage == null) !== (sample.stdinText == null) ||
+          (sample.language != null && !['c', 'python'].includes(sample.language))) {
         throw new Error(`Sample ${index + 1} needs id, codeImage, and codeText; stdinImage/stdinText are optional.`);
       }
-      const body = {};
+      const body = { language: sample.language ?? 'c' };
       for (const channel of ['code', 'stdin']) {
         const path = sample[`${channel}Image`];
         if (path) body[channel] = `data:image/png;base64,${(await readFile(resolve(dirname(absolute), path))).toString('base64')}`;
       }
-      const result = await recognizeHandwriting(body, { logger: () => {} });
+      let usage;
+      const result = await recognizeHandwriting(body, { logger: (entry) => {
+        if (entry.event === 'success') usage = entry.usage;
+      } });
       const expected = [sample.codeText, sample.stdinText ?? ''];
       const actual = [result.code.map((line) => line.text).join('\n'), result.stdin.map((line) => line.text).join('\n')];
       const channelScores = expected.map((text, channel) => scoreTranscript(text, actual[channel]));
@@ -41,7 +45,7 @@ if (!manifestPath) {
       console.log(JSON.stringify({ id: sample.id, characterErrorRate: score.characterErrorRate,
         exactLineRate: score.exactLineRate, criticalSymbolErrorRate: score.criticalSymbolErrorRate,
         uncertainLines: [...result.code, ...result.stdin].filter((line) => line.uncertain).length,
-        durationMs: result.durationMs }));
+        durationMs: result.durationMs, usage }));
     }
     const overall = { ...summarizeScores(scores), samples: samples.length };
     console.log(JSON.stringify({ overall, correctionTime: timedCorrections ?

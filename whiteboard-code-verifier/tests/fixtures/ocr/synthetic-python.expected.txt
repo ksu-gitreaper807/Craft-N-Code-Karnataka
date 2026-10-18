@@ -1,0 +1,6 @@
+from collections import deque
+
+values = deque([0, 1, 2])
+for value in values
+    if value != 0:
+        print(value)

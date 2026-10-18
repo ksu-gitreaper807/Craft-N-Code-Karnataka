@@ -127,7 +127,7 @@ The Node layer applies a 22-second outer runner deadline and removes the named c
 
 The runner parses GCC messages, sanitizer output, and curated-library contract failures into structured diagnostics. Results include status, stdout, stderr, compiler output, exit code, duration, diagnostics, and teaching notes.
 
-Typed source lines map directly to element geometry. OCR line boxes project through the capture's bounds back onto canvas coordinates. Clicking a diagnostic focuses its region. Editing source, input, or relevant geometry marks old results stale and removes their highlights. Added review lines can lack an original board location.
+Typed source lines map directly to element geometry. Legacy OCR line boxes can project through the capture's bounds onto approximate canvas coordinates; current compact OCR returns text only, so handwritten diagnostics stay in the editor. Clicking a diagnostic focuses a board region only when a location exists. Editing source, input, or relevant geometry marks old results stale and removes their highlights. Added review lines can lack an original board location.
 
 The bundled header-only libraries provide an integer stack (`stack.h`), a singly linked integer list (`linked_list.h`), a growing circular integer queue (`queue.h`), and binary search with lower/upper bounds on sorted arrays (`search.h`). These are project-provided teaching extensions rather than ISO C standard-library headers. Public operation macros pass `__LINE__` so contract failures identify the teacher's callsite. The **Libraries** tab exposes the compiled header sources, method lists, and runnable examples. See the [C library reference](c-libraries.md) for APIs, ownership rules, preconditions, and complexity.
 
@@ -157,6 +157,8 @@ OCR permits one request in flight and six attempts per minute, with a 4 MiB requ
 OCR failures include safe diagnostic metadata in the API response and an expandable UI panel. The backend logs `[ocr:gemini]` records with HTTP status, duration, quota classification, and numeric per-request token usage on success. Provider-reported token limits, generic quota/rate limits, and depleted credits are distinguished; a timeout leaves quota status unknown. Logs omit credentials, images, transcriptions, and raw error payloads. Remaining project quota must be checked in AI Studio.
 
 The server binds to loopback and checks request hosts and origins. A trusted hosted frontend can use an HTTPS reverse proxy, exact `BOARDROOM_APP_ORIGIN`, and `BOARDROOM_API_TOKEN`; this enables CORS preflight and token checks on every API request. The browser receives the token from the teacher at runtime and keeps it in session storage. Only the public API origin uses a `VITE_` build variable. The API server's ignored `.env` contains `GEMINI_API_KEY`, optional `OCR_MODEL`, and hosted-access settings. Credentials are not mounted into execution containers. `PORT` overrides the API's default port of 8787. A health response indicates that OCR credentials are configured, not that every future provider request will succeed. See [Docker API deployment](docker-api-deployment.md).
+
+OCR now requests low thinking and compact `{text, uncertain}` lines. It preserves the review API shape with null geometry and empty alternatives for text-only responses. Teacher review and editor diagnostics remain available; current text-only recognition supplies no canvas line positions. Live paired speed/accuracy verification is pending available provider quota.
 
 ## 9. Storage and repository organization
 
