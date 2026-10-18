@@ -1,15 +1,16 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { captureHandwriting } from './capture.js';
 import { extractProgram } from './board.js';
-import { inkFingerprint, makeReviewDraft, reviewedProgram } from './handwriting.js';
+import { handwritingChannels, inkFingerprint, makeReviewDraft, reviewedProgram } from './handwriting.js';
 import { apiFetch, readApiJson } from './api.js';
 import { languagePayload } from './languages.js';
 
 const HandwritingPanel = forwardRef(function HandwritingPanel({
   api, frameId, fingerprint, configuration, hasInk, language = 'c',
-  busy, onBusy, onConfirm, onInvalidate,
+  busy, onBusy, onConfirm, onInvalidate, confirmedOcr, onConfirmInput,
 }, ref) {
   const [draft, setDraft] = useState(null);
+  const [scanMode, setScanMode] = useState('all');
   const [error, setError] = useState('');
   const [diagnostic, setDiagnostic] = useState(null);
   const [selected, setSelected] = useState({ channel: 'code', index: 0 });
@@ -20,8 +21,9 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
   useEffect(() => () => controller.current?.abort(), []);
   useEffect(() => { setDraft(null); setAcknowledged(false); setError(''); setDiagnostic(null); }, [language]);
 
-  async function read() {
-    if (inFlight.current || !api || !hasInk) return;
+  async function read(mode = 'all') {
+    if (inFlight.current || busy || !api || !hasInk) return;
+    setScanMode(mode);
     setError('');
     setDiagnostic(null);
     if (!configuration?.available) {
@@ -30,7 +32,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
     }
     inFlight.current = true;
     onBusy(true);
-    onInvalidate();
+    if (mode === 'all') onInvalidate();
     setDraft(null);
     setAcknowledged(false);
     const abort = new AbortController();
@@ -40,8 +42,18 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
       // Excalidraw mutates strokes in place. Freeze the image and its signature together.
       const snapshot = structuredClone(api.getSceneElements());
       const snapshotFingerprint = inkFingerprint(snapshot, frameId);
-      const typed = extractProgram(snapshot, frameId);
-      const captures = await captureHandwriting(api, snapshot, frameId);
+      let typed = extractProgram(snapshot, frameId);
+      const codeFingerprint = inkFingerprint(snapshot, frameId, ['code']);
+      const channels = handwritingChannels(snapshot, frameId);
+      const previous = confirmedOcr?.frameId === frameId && confirmedOcr.codeFingerprint === codeFingerprint &&
+        (confirmedOcr.language ?? 'c') === language ? confirmedOcr : null;
+      if (mode === 'stdin') {
+        if (!channels.stdin) throw new Error('Write input with the blue “Pen: input” inside the selected frame first.');
+        // Reuse only code that was reviewed against these exact black strokes.
+        if (previous) typed = previous.program;
+        else if (channels.code) typed = { ...typed, source: '', lineMap: [] };
+      }
+      const captures = await captureHandwriting(api, snapshot, frameId, mode === 'stdin' ? ['stdin'] : ['code', 'stdin']);
       const response = await apiFetch('/api/ocr', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
         body: JSON.stringify({ ...Object.fromEntries(Object.entries(captures).map(([channel, capture]) => [channel, capture.dataUrl])), ...languagePayload(language) }),
@@ -51,8 +63,9 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
         setDiagnostic(recognition.diagnostic ?? null);
         throw new Error(recognition.error ?? `OCR returned HTTP ${response.status}.`);
       }
-      setDraft(makeReviewDraft(recognition, captures, typed, snapshotFingerprint, frameId));
-      setSelected({ channel: 'code', index: 0 });
+      setDraft({ ...makeReviewDraft(recognition, captures, typed, snapshotFingerprint, frameId),
+        mode, codeFingerprint, codeConfirmedAt: mode === 'stdin' ? (previous?.codeConfirmedAt ?? previous?.confirmedAt) : undefined });
+      setSelected({ channel: mode === 'stdin' ? 'stdin' : 'code', index: 0 });
     } catch (caught) {
       if (caught.diagnostic) setDiagnostic(caught.diagnostic);
       if (caught.name === 'AbortError') setDiagnostic({ provider: 'gemini', reason: 'browser_timeout', quotaStatus: 'unknown' });
@@ -64,29 +77,34 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
       onBusy(false);
     }
   }
-  useImperativeHandle(ref, () => ({ read }));
+  useImperativeHandle(ref, () => ({ read: () => read(), readInput: () => read('stdin') }));
 
   function edit(channel, transform) {
     setDraft((previous) => ({ ...previous, [channel]: transform(previous[channel]) }));
     setAcknowledged(false);
-    onInvalidate();
+    if (draft.mode !== 'stdin') onInvalidate();
   }
 
-  function confirm() {
+  function confirm(saveCase = false) {
     if (!draft || stale || !acknowledged || busy) return;
     try {
-      const program = reviewedProgram(draft);
-      onConfirm({ frameId, fingerprint, language, program: { ...program, language }, raw: draft.raw,
+      const stdin = draft.stdin.map(line => line.text).join('\n');
+      if (stdin.includes('\0') || new TextEncoder().encode(stdin).length > 8192) throw new Error('Input must be at most 8 KiB and contain no NUL characters.');
+      const program = draft.mode === 'stdin' && !draft.code.length ? null : reviewedProgram(draft);
+      const confirmed = program ? { frameId, fingerprint, codeFingerprint: draft.codeFingerprint,
+        codeConfirmedAt: draft.codeConfirmedAt, language, program: { ...program, language }, raw: draft.raw,
         reviewed: { code: draft.code.map((line) => line.text), stdin: draft.stdin.map((line) => line.text) },
-        confirmedAt: new Date().toISOString() });
+        confirmedAt: new Date().toISOString() } : null;
+      if (draft.mode === 'stdin') onConfirmInput(confirmed, stdin, saveCase);
+      else onConfirm(confirmed);
       setError('');
     } catch (caught) { setError(caught.message); }
   }
 
   return <section className="handwriting-panel" aria-label="Handwriting recognition and review">
-    <h3>Read the ink. Check the code.</h3>
-    <p className="panel-help">Read sends black and blue ink from this frame to Google Gemini. Review every line before compiling. Other annotation colors stay out of the images.</p>
-    <button className="ocr-read-button" onClick={read} disabled={!api || !hasInk || !configuration?.available || busy}>{busy ? 'Reading handwriting…' : 'Read handwriting'}</button>
+    <h3>{scanMode === 'stdin' ? 'Scan input. Keep the code.' : 'Read the ink. Check the code.'}</h3>
+    <p className="panel-help">{scanMode === 'stdin' ? 'Scan input sends only blue input ink from this frame to Gemini. Review it before using it. Previously confirmed code is preserved.' : 'Read sends black and blue ink from this frame to Google Gemini. Review every line before compiling. Other annotation colors stay out of the images.'}</p>
+    <button className="ocr-read-button" onClick={() => read(scanMode)} disabled={!api || !hasInk || !configuration?.available || busy}>{busy ? 'Reading handwriting…' : scanMode === 'stdin' ? 'Scan input again' : 'Read handwriting'}</button>
     {!configuration?.available && <div className="runner-notice">{configuration?.message ?? 'Checking OCR configuration…'}</div>}
     {!hasInk && <p className="panel-help">Write with “Pen: code” or “Pen: input”, then use “Select code & input” in the top bar and drag around your writing.</p>}
     {error && <div className="error-notice" role="alert">{error}</div>}
@@ -99,7 +117,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
     {draft && draft.frameId === frameId && <>
       <p className="ocr-provenance">{draft.raw.provider} · {draft.raw.model} · {draft.raw.durationMs} ms</p>
       <p className="panel-help">“Check” marks model-reported ambiguity, not a measured confidence score. Compare the text with the captured image; text-only recognition does not provide line locations.</p>
-      {['code', 'stdin'].map((channel) => <div className="ocr-channel" key={channel}>
+      {(draft.mode === 'stdin' ? ['stdin'] : ['code', 'stdin']).map((channel) => <div className="ocr-channel" key={channel}>
         <h4>{channel === 'code' ? 'Code or algorithm' : 'Standard input'}</h4>
         {draft.captures[channel] && <div className="ocr-preview-scroll"><div className="ocr-preview">
           <img src={draft.captures[channel].dataUrl} alt={channel === 'code' ? 'Captured code handwriting' : 'Captured input handwriting'} />
@@ -125,8 +143,12 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
         </li>)}</ol>
         <button className="ocr-add-line" disabled={Boolean(stale) || busy} onClick={() => edit(channel, (lines) => [...lines, { text: '', box: null, location: null, uncertain: false, alternatives: [] }])}>+ Add line</button>
       </div>)}
-      <label className="ocr-confirm-check"><input type="checkbox" checked={acknowledged} disabled={Boolean(stale) || busy} onChange={(event) => setAcknowledged(event.target.checked)} />I checked the code and input against the handwriting.</label>
-      <button className="ocr-confirm-button" disabled={!acknowledged || Boolean(stale) || busy} onClick={confirm}>Use confirmed code</button>
+      <label className="ocr-confirm-check"><input type="checkbox" checked={acknowledged} disabled={Boolean(stale) || busy} onChange={(event) => setAcknowledged(event.target.checked)} />{draft.mode === 'stdin' ? 'I checked the input against the handwriting.' : 'I checked the code and input against the handwriting.'}</label>
+      {draft.mode === 'stdin' ? <>
+        <button className="ocr-confirm-button" disabled={!acknowledged || Boolean(stale) || busy || !draft.code.length} onClick={() => confirm(false)}>Use input for next run</button>
+        <button className="quiet-button" disabled={!acknowledged || Boolean(stale) || busy} onClick={() => confirm(true)}>Save input as test case</button>
+        <p className="panel-help">Scan new blue input for each run, or save scans as separate cases in this browser. Code is preserved. {!draft.code.length && 'Read and confirm the code before using input for a run.'}</p>
+      </> : <button className="ocr-confirm-button" disabled={!acknowledged || Boolean(stale) || busy} onClick={() => confirm()}>Use confirmed code</button>}
       <p className="panel-help">Confirmation keeps the original ink. Use the run button at your selected pseudocode level to compile.</p>
     </>}
   </section>;

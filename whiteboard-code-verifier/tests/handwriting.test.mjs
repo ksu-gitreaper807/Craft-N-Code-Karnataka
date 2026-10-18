@@ -57,3 +57,14 @@ test('captures diagram arrows and invalidates review when an arrow direction or 
     assert.notEqual(inkFingerprint([{ ...arrow, ...change }], 'frame'), original);
   }
 });
+
+
+test('code-only review fingerprint survives blue input edits but rejects code edits', () => {
+  const input = { ...stroke, id: 'input', strokeColor: '#1971c2' };
+  const original = [stroke, input];
+  const changedInput = [stroke, { ...input, points: [[0, 0], [30, 30]] }];
+  assert.equal(inkFingerprint(original, 'frame', ['code']), inkFingerprint(changedInput, 'frame', ['code']));
+  assert.notEqual(inkFingerprint(original, 'frame'), inkFingerprint(changedInput, 'frame'));
+  assert.notEqual(inkFingerprint(original, 'frame', ['code']), inkFingerprint([{ ...stroke, x: 99 }, input], 'frame', ['code']));
+  assert.notEqual(inkFingerprint(original, 'frame', ['code']), inkFingerprint(original, 'other-frame', ['code']));
+});

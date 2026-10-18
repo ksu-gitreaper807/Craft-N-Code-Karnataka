@@ -12,8 +12,8 @@ export function handwritingChannels(elements, frameId) {
   ]));
 }
 
-export function inkFingerprint(elements, frameId) {
-  return JSON.stringify([frameId, ...['code', 'stdin'].map((channel) =>
+export function inkFingerprint(elements, frameId, channels = ['code', 'stdin']) {
+  return JSON.stringify([frameId, ...channels.map((channel) =>
     channelElements(elements, frameId, channel).map((el) => [
       el.id, el.type, el.x, el.y, el.width, el.height, el.angle, el.strokeColor,
       el.strokeWidth, el.points, el.pressures, el.simulatePressure, el.opacity, el.backgroundColor,

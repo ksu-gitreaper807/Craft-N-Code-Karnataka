@@ -1,10 +1,10 @@
 import { exportToCanvas, getCommonBounds } from '@excalidraw/excalidraw';
 import { channelElements, handwritingChannels } from './handwriting.js';
 
-export async function captureHandwriting(api, elements, frameId) {
+export async function captureHandwriting(api, elements, frameId, selectedChannels = ['code', 'stdin']) {
   const channels = handwritingChannels(elements, frameId);
   const captures = {};
-  for (const channel of ['code', 'stdin']) {
+  for (const channel of selectedChannels) {
     if (!channels[channel]) continue;
     const ink = channelElements(elements, frameId, channel);
     const [left, top, right, bottom] = getCommonBounds(ink);

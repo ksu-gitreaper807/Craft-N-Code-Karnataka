@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { apiFetch, readApiJson } from './api.js';
 import { languagePayload } from './languages.js';
 
 import { MAX_CASES, CASE_STATUSES as statuses, emptyCase, suiteKey, validateSuite, compareOutput } from './test-cases.js';
 
-export default function TestCases({ program, signature, disabled, onBusy, captureScene, onCompiled }) {
+const TestCases = forwardRef(function TestCases({ program, signature, disabled, onBusy, captureScene, onCompiled }, ref) {
   const language = program.language ?? 'c';
   const [cases, setCases] = useState(() => {
     try {
@@ -25,6 +25,18 @@ export default function TestCases({ program, signature, disabled, onBusy, captur
     catch { setStorageWarning('Browser storage is unavailable or full. Export this suite to keep it.'); }
   }, [cases, language]);
   useEffect(() => () => controller.current?.abort(), []);
+
+  useImperativeHandle(ref, () => ({
+    addInput(stdin) {
+      if (busy) throw new Error('Wait for the current cases to finish.');
+      const pristine = cases.length === 1 && JSON.stringify(cases[0]) === JSON.stringify(emptyCase(cases[0].id));
+      if (!pristine && cases.length >= MAX_CASES) throw new Error(`This suite already has ${MAX_CASES} cases. Remove a case before saving another scan.`);
+      const item = { ...emptyCase(nextId), name: `Scanned input ${nextId}`, stdin };
+      const updated = pristine ? [item] : [...cases, item];
+      validateSuite({ version: 1, language, cases: updated }, language);
+      setCases(updated); setNextId(nextId + 1); setResults(null); setError('');
+    },
+  }));
 
   async function importSuite(event) {
     const file = event.target.files?.[0]; event.target.value = '';
@@ -121,4 +133,6 @@ export default function TestCases({ program, signature, disabled, onBusy, captur
       {item.diagnostics?.length > 0 && <p>{item.diagnostics.map((diagnostic) => diagnostic.message).join(' · ')}</p>}
     </li>)}</ol>}
   </section>;
-}
+});
+
+export default TestCases;

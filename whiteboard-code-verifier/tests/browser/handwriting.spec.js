@@ -312,3 +312,138 @@ test('confirmed arrow drawings invoke list_from_arrows and run real linked nodes
   await expect(page.getByLabel('Automatic snapshot status')).toContainText('Full-board snapshot saved');
   expect(runs).toBe(1);
 });
+
+function inputScanBoard({ codeInk = true } = {}) {
+  const file = boardFile({ code: lessons[0].source });
+  const board = JSON.parse(file.buffer.toString());
+  for (const [id, color, y] of [
+    ...(codeInk ? [['black-scan-stroke', '#1e1e1e', 100]] : []),
+    ['blue-scan-stroke', '#1971c2', 480],
+  ]) board.elements.push({ id, type: 'freedraw', frameId: 'frame', x: 60, y, width: 40, height: 20,
+    strokeColor: color, points: [[0, 0], [40, 20]] });
+  file.buffer = Buffer.from(JSON.stringify(board));
+  return file;
+}
+
+test('independent input scans preserve reviewed code, run new input and persist separate cases', async ({ page }, testInfo) => {
+  await configureProviderFixture(page);
+  const captures = [];
+  const runs = [];
+  page.on('request', request => { if (request.url().endsWith('/api/run')) runs.push(request.postDataJSON()); });
+  await page.route('**/api/ocr', async route => {
+    const payload = route.request().postDataJSON(); captures.push(payload);
+    await route.fulfill({ json: { provider: 'test-fixture', model: 'fixture-only', durationMs: 1,
+      code: (payload.code ? lessons[0].source.split('\n') : ['DO NOT REPLACE REVIEWED CODE']).map(text => ({ text, box: null, uncertain: false, alternatives: [] })),
+      stdin: [fixtureLine(payload.code ? '3 5' : captures.length === 2 ? '8 9' : '11 12', 0)],
+    } });
+  });
+  await page.goto('/');
+  await importBoard(page, inputScanBoard());
+  await page.getByRole('button', { name: 'Read & review handwriting', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'I checked the code and input against the handwriting.' }).check();
+  await page.getByRole('button', { name: 'Use confirmed code', exact: true }).click();
+  await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
+  await expect(page.locator('.terminal pre')).toHaveText('3 + 5 = 8\n');
+  await expect(page.getByLabel('Automatic snapshot status')).toContainText('Full-board snapshot saved');
+
+  await page.getByRole('button', { name: 'Pen: input', exact: true }).click();
+  await drawStroke(page);
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(lessons[0].source);
+  await page.getByRole('button', { name: 'Scan input', exact: true }).click();
+  await expect(page.getByLabel('Input line 1', { exact: true })).toHaveValue('8 9');
+  await expect(page.getByLabel('Code line 1', { exact: true })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('input-scan-review.png'), fullPage: true });
+  expect(captures[1].code).toBeUndefined();
+  expect(captures[1].stdin).toMatch(/^data:image\/png;base64,/);
+  expect(runs).toHaveLength(1);
+  await expect(page.getByRole('button', { name: 'Use input for next run', exact: true })).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'I checked the input against the handwriting.' }).check();
+  await page.getByLabel('Input line 1', { exact: true }).fill('8 10');
+  await expect(page.getByRole('button', { name: 'Use input for next run', exact: true })).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'I checked the input against the handwriting.' }).check();
+  await page.getByRole('button', { name: 'Use input for next run', exact: true }).click();
+  await expect(page.getByLabel('STANDARD INPUT · BLUE INK', { exact: true })).toHaveValue('8 10');
+  await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
+  await expect(page.locator('.terminal pre')).toHaveText('8 + 10 = 18\n');
+  await expect(page.getByLabel('Automatic snapshot status')).toContainText('Full-board snapshot saved');
+  expect(runs[1].source).toBe(lessons[0].source);
+  expect(runs[1].stdin).toBe('8 10');
+
+  await page.getByRole('button', { name: 'Scan input', exact: true }).click();
+  await expect(page.getByLabel('Input line 1', { exact: true })).toHaveValue('11 12');
+  await page.getByRole('button', { name: 'Insert stdin line after 1', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'I checked the input against the handwriting.' }).check();
+  await page.getByRole('button', { name: 'Save input as test case', exact: true }).click();
+  await expect(page.locator('.test-cases textarea').first()).toHaveValue('11 12\n');
+  await page.getByRole('button', { name: 'Scan input', exact: true }).click();
+  await expect(page.getByLabel('Input line 1', { exact: true })).toHaveValue('11 12');
+  await page.getByLabel('Input line 1', { exact: true }).fill('20 30');
+  await page.getByRole('checkbox', { name: 'I checked the input against the handwriting.' }).check();
+  await page.getByRole('button', { name: 'Save input as test case', exact: true }).click();
+  await expect(page.locator('.test-cases textarea')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Run 2 cases', exact: true }).click();
+  await expect(page.locator('.case-results')).toContainText('11 + 12 = 23');
+  await expect(page.locator('.case-results')).toContainText('20 + 30 = 50');
+  await expect(page.getByRole('button', { name: 'Run 2 cases', exact: true })).toBeEnabled();
+  expect(runs).toHaveLength(4);
+  await page.getByRole('button', { name: 'Pen: code', exact: true }).click();
+  await drawStroke(page, 35);
+  await page.getByRole('button', { name: 'Scan input', exact: true }).click();
+  await expect(page.getByLabel('Input line 1', { exact: true })).toHaveValue('11 12');
+  await page.getByRole('checkbox', { name: 'I checked the input against the handwriting.' }).check();
+  await expect(page.getByRole('button', { name: 'Use input for next run', exact: true })).toBeDisabled();
+  expect(runs).toHaveLength(4);
+  await page.reload();
+  await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+  await page.getByRole('tab', { name: 'Cases', exact: true }).click();
+  await expect(page.locator('.test-cases textarea').nth(0)).toHaveValue('11 12\n');
+  await expect(page.locator('.test-cases textarea').nth(1)).toHaveValue('20 30');
+});
+
+test('input-only scans can load cases before code review without confirming black code', async ({ page }) => {
+  await configureProviderFixture(page);
+  let runs = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/run')) runs++; });
+  await page.route('**/api/ocr', route => route.fulfill({ json: { provider: 'test-fixture', model: 'fixture-only', durationMs: 1,
+    code: [], stdin: [fixtureLine('5 7', 0)] } }));
+  await page.goto('/');
+  await importBoard(page, inputScanBoard());
+  // Open the panel without using the run button (which performs a full read).
+  await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+  await page.getByRole('button', { name: 'Scan input', exact: true }).click();
+  await expect(page.getByLabel('Input line 1', { exact: true })).toHaveValue('5 7');
+  await page.getByRole('checkbox', { name: 'I checked the input against the handwriting.' }).check();
+  await expect(page.getByRole('button', { name: 'Use input for next run', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Save input as test case', exact: true }).click();
+  await expect(page.locator('.test-cases textarea').first()).toHaveValue('5 7');
+  await expect(page.getByRole('button', { name: 'Run 1 case', exact: true })).toBeDisabled();
+  expect(runs).toBe(0);
+});
+
+test('new strokes invalidate an input scan and a full case suite rejects an extra scan', async ({ page }) => {
+  await configureProviderFixture(page);
+  await page.route('**/api/ocr', route => route.fulfill({ json: { provider: 'test-fixture', model: 'fixture-only', durationMs: 1,
+    code: [], stdin: [fixtureLine('6 7', 0)] } }));
+  await page.goto('/');
+  await page.evaluate(() => localStorage.setItem('boardroom-test-cases:c', JSON.stringify({ version: 1, language: 'c',
+    cases: Array.from({ length: 20 }, (_, i) => ({ name: `Keep ${i}`, stdin: String(i), expectedStatus: 'success', checkOutput: false, expectedOutput: '', comparison: 'exact' })),
+  })));
+  await page.reload();
+  await importBoard(page, inputScanBoard({ codeInk: false }));
+  await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+  await page.getByRole('button', { name: 'Scan input', exact: true }).click();
+  await expect(page.getByLabel('Input line 1', { exact: true })).toHaveValue('6 7');
+  await page.getByRole('checkbox', { name: 'I checked the input against the handwriting.' }).check();
+  await page.getByRole('button', { name: 'Pen: input', exact: true }).click();
+  await drawStroke(page);
+  await expect(page.getByRole('button', { name: 'Use input for next run', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Save input as test case', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Scan input again', exact: true }).click();
+  await expect(page.getByLabel('Input line 1', { exact: true })).toBeEnabled();
+  await page.getByRole('checkbox', { name: 'I checked the input against the handwriting.' }).check();
+  await page.getByRole('button', { name: 'Save input as test case', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('already has 20 cases');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('boardroom-test-cases:c')).cases.length)).toBe(20);
+  await page.getByRole('button', { name: 'Use input for next run', exact: true }).click();
+  await expect(page.getByLabel('STANDARD INPUT · BLUE INK', { exact: true })).toHaveValue('6 7');
+});

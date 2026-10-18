@@ -128,6 +128,7 @@ function App() {
   const selectingRegion = useRef(null);
   const upload = useRef(null);
   const ocrPanel = useRef(null);
+  const casesPanel = useRef(null);
   const editorRef = useRef(null);
   const currentKey = useRef('');
   const controller = useRef(null);
@@ -137,7 +138,9 @@ function App() {
   const hasInk = inkChannels.code || inkChannels.stdin;
   const fingerprint = useMemo(() => inkFingerprint(elements, frameId), [elements, frameId]);
   const recognizedProgram = confirmedOcr?.frameId === frameId && confirmedOcr.fingerprint === fingerprint && (confirmedOcr.language ?? 'c') === language ? confirmedOcr.program : null;
-  const program = { ...(hasInk ? recognizedProgram ?? EMPTY_PROGRAM : typedProgram), language };
+  const codeReviewCurrent = confirmedOcr?.frameId === frameId && (confirmedOcr.language ?? 'c') === language &&
+    confirmedOcr.codeFingerprint === inkFingerprint(elements, frameId, ['code']);
+  const program = { ...(hasInk ? recognizedProgram ?? (codeReviewCurrent ? { ...confirmedOcr.program, stdin: '' } : EMPTY_PROGRAM) : typedProgram), language };
   const signature = programSignature(program, frameId);
   // The board supplies the writing; the editor holds the exact text that is compiled.
   const composed = composeBoardSource(program.source, template, snippetMode && language === 'c', language, pseudoLevel === 3);
@@ -278,6 +281,11 @@ function App() {
     } finally { clearTimeout(timer); controller.current = null; }
   }
 
+  function scanInput() {
+    setPanelVisible(true); setToolsOpen(false); setTab('handwriting');
+    ocrPanel.current?.readInput();
+  }
+
   async function run() {
     if (!api || running || reading) return;
     setError('');
@@ -290,7 +298,8 @@ function App() {
     const liveFingerprint = inkFingerprint(liveElements, frameId);
     if (liveHasInk && (confirmedOcr?.frameId !== frameId || confirmedOcr.fingerprint !== liveFingerprint)) {
       setTab('handwriting');
-      ocrPanel.current?.read();
+      if (confirmedOcr?.frameId === frameId && confirmedOcr.codeFingerprint === inkFingerprint(liveElements, frameId, ['code']) && liveChannels.stdin) ocrPanel.current?.readInput();
+      else ocrPanel.current?.read();
       return;
     }
     const liveProgram = { ...(liveHasInk ? confirmedOcr.program : extractProgram(liveElements, frameId)), language };
@@ -659,7 +668,7 @@ function App() {
     setNotice('Full program mode: the board text runs exactly as written.');
   }
 
-  const runLabel = reading ? 'Reading handwriting…' : running ? phase === 'gemini' ? `Gemini is preparing ${languageLabel}…` : language === 'python' ? 'Checking & running…' : 'Compiling & running…' : hasInk && !recognizedProgram ? 'Read & review handwriting' : pseudoLevel === 3 ? 'Generate & run' : 'Verify & run';
+  const runLabel = reading ? 'Reading handwriting…' : running ? phase === 'gemini' ? `Gemini is preparing ${languageLabel}…` : language === 'python' ? 'Checking & running…' : 'Compiling & running…' : hasInk && !recognizedProgram ? codeReviewCurrent ? 'Scan & review input' : 'Read & review handwriting' : pseudoLevel === 3 ? 'Generate & run' : 'Verify & run';
   const runDisabled = running || reading || !api || !frameId || !(hasInk && !recognizedProgram ? ocrHealth?.available : health?.available) || (pseudoLevel === 3 && !ocrHealth?.available);
 
   function changeLanguage(next) {
@@ -782,7 +791,9 @@ function App() {
               {composed.skipped && <p className="code-note">Your text already declares main(), so it runs as a full program, not inside the template.</p>}
               <CodeEditor id="source-editor" ref={editorRef} value={runSource} onChange={editCode} diagnostics={shownDiagnostics} disabled={busy}
                 placeholder={hasInk && !recognizedProgram ? 'Confirmed handwriting appears here. You can also type code directly.' : `Type ${languageLabel} here, or write it on the board.`} />
-              <label className="field-label" htmlFor="stdin-editor">STANDARD INPUT · BLUE INK</label>
+              <div className="code-heading"><label className="field-label" htmlFor="stdin-editor">STANDARD INPUT · BLUE INK</label>
+                <button className="quiet-button" onClick={scanInput} disabled={busy || !api || !frameId || !inkChannels.stdin || !ocrHealth?.available}>Scan input</button>
+              </div>
               <textarea id="stdin-editor" className="input-editor" value={program.stdin} spellCheck={false} readOnly={hasInk} placeholder="No input: the program receives EOF." disabled={busy || !frameId}
                 onChange={(event) => { if (!hasInk) { setPseudoDraft(null); replaceChannel(api, frameId, program.inputIds, event.target.value, INPUT_COLOR); } }} />
               <details className="frame-size"><summary>Frame size</summary>
@@ -797,17 +808,23 @@ function App() {
             <div className="result-body" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
               <div hidden={tab !== 'handwriting'}><HandwritingPanel ref={ocrPanel}
                 api={api} frameId={frameId} fingerprint={fingerprint} language={language}
-                configuration={ocrHealth} hasInk={hasInk}
+                configuration={ocrHealth} hasInk={hasInk} confirmedOcr={confirmedOcr}
+                onConfirmInput={(confirmed, stdin, saveCase) => {
+                  if (saveCase) casesPanel.current.addInput(stdin);
+                  if (confirmed) setConfirmedOcr(confirmed);
+                  setPseudoDraft(null); setResult(null); setTab(saveCase ? 'cases' : 'output');
+                  setNotice(saveCase ? 'Scanned input saved as a test case. Use Run cases to execute it.' : 'Input updated. Use Verify & run to execute the code with this input.');
+                }}
                 busy={reading || running} onBusy={setReading} onInvalidate={() => setConfirmedOcr(null)}
                 onConfirm={(confirmed) => {
                   setConfirmedOcr(confirmed); setResult(null); setTab('output');
                   setNotice('Transcription confirmed. Use the run button at your selected level to check, complete, or demonstrate it.');
                 }}
               /></div>
-              <div hidden={tab !== 'cases'}>{pseudoLevel === 3 && <p className="panel-help">First correct or generate code with the run button. Cases use that displayed program until the board or level changes.</p>}<TestCases key={language} program={caseProgram} signature={`${signature}:${pseudoLevel}:${caseProgram.source}`}
+              <div hidden={tab !== 'cases'}>{pseudoLevel === 3 && <p className="panel-help">First correct or generate code with the run button. Cases use that displayed program until the board or level changes.</p>}<TestCases ref={casesPanel} key={language} program={caseProgram} signature={`${signature}:${pseudoLevel}:${caseProgram.source}`}
                 captureScene={boardScene} onCompiled={(scene, submitted, data) => saveCompilationSnapshot(scene,
                   { source: submitted.source, stdin: submitted.stdin, language: submitted.language, level: pseudoLevel, kind: 'case', result: data })}
-                disabled={running || reading || !health?.available || !api || !frameId || !caseProgram.source.trim() || (pseudoLevel === 3 && !currentDraft)} onBusy={setRunning} /></div>
+                disabled={running || reading || !health?.available || !api || !frameId || !caseProgram.source.trim() || (hasInk && !recognizedProgram) || (pseudoLevel === 3 && !currentDraft)} onBusy={setRunning} /></div>
               {tab === 'history' && !snapshotAvailable && <p className="panel-help">{snapshotMessage}</p>}
               {tab === 'history' && snapshotAvailable && <SnapshotHistory key={snapshotRevision} onOpen={(scene) => {
                 const ink = restoreBoard(scene);
