@@ -145,9 +145,8 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
       </div>)}
       <label className="ocr-confirm-check"><input type="checkbox" checked={acknowledged} disabled={Boolean(stale) || busy} onChange={(event) => setAcknowledged(event.target.checked)} />{draft.mode === 'stdin' ? 'I checked the input against the handwriting.' : 'I checked the code and input against the handwriting.'}</label>
       {draft.mode === 'stdin' ? <>
-        <button className="ocr-confirm-button" disabled={!acknowledged || Boolean(stale) || busy || !draft.code.length} onClick={() => confirm(false)}>Use input for next run</button>
-        <button className="quiet-button" disabled={!acknowledged || Boolean(stale) || busy} onClick={() => confirm(true)}>Save input as test case</button>
-        <p className="panel-help">Scan new blue input for each run, or save scans as separate cases in this browser. Code is preserved. {!draft.code.length && 'Read and confirm the code before using input for a run.'}</p>
+        <button className="quiet-button ocr-save-case" disabled={!acknowledged || Boolean(stale) || busy} onClick={() => confirm(true)}>Save input as test case</button>
+        <p className="panel-help">Save each reviewed input scan as a separate case in this browser. Code is preserved. {!draft.code.length && 'Read and confirm the code before running cases.'}</p>
       </> : <button className="ocr-confirm-button" disabled={!acknowledged || Boolean(stale) || busy} onClick={() => confirm()}>Use confirmed code</button>}
       <p className="panel-help">Confirmation keeps the original ink. Use the run button at your selected pseudocode level to compile.</p>
     </>}

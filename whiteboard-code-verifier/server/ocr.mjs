@@ -171,11 +171,13 @@ export async function recognizeHandwriting(body, { env = process.env, fetchImpl 
       const quota = diagnostic.quotaStatus;
       const message = [401, 403].includes(response.status) ? 'Gemini rejected the API key or model access.' :
         response.status === 402 ? 'Gemini reports depleted billing credits. Check billing in Google AI Studio.' :
-        response.status === 429 ? (quota === 'token_limit_reached' ?
+        response.status === 429 ? (diagnostic.quotaReason === 'zero_quota' ?
+          'Gemini reports a zero quota for this model in the Google project. Check model access and project billing/quota in AI Studio; a new key in the same project does not increase its quota.' : diagnostic.quotaReason === 'daily_limit' ?
+          'Gemini reports the project’s daily model quota was reached. A new key in the same project shares this limit. Check AI Studio quota and reset time.' : quota === 'token_limit_reached' ?
           'Gemini reports a token quota limit was reached. Check usage and limits in Google AI Studio.' :
           'Gemini reports a quota or rate limit was reached. This does not confirm token exhaustion. Check Google AI Studio.') :
         response.status === 404 ? 'The configured OCR_MODEL is unavailable. Check your model access.' : 'Gemini could not process this board image.';
-      const retry = diagnostic.retryAfterSeconds == null ? '' : ` Retry after ${diagnostic.retryAfterSeconds} seconds.`;
+      const retry = diagnostic.retryAfterSeconds == null || diagnostic.quotaReason === 'zero_quota' ? '' : ` Retry after ${diagnostic.retryAfterSeconds} seconds.`;
       lastFailure = requestFailure(`${message} (HTTP ${response.status})${retry}`, response.status === 429 ? 429 : 502,
         'ocr_provider_error', { reason: 'provider_error', httpStatus: response.status, ...diagnostic });
 

@@ -190,3 +190,17 @@ test('Python OCR preserves indentation and passes explicit language context with
   assert.deepEqual(result.code.map((entry) => entry.text), ['if True', '    print(5)']);
   assert.throws(() => validateOcrImages({ code: PNG, language: 'javascript' }), /C\+\+ or Python/);
 });
+
+test('a reported zero project quota explains model access instead of recommending a timed retry', async () => {
+  await assert.rejects(recognizeHandwriting({ code: PNG }, { env, logger: () => {}, fetchImpl: async () =>
+    new Response(JSON.stringify({ error: { status: 'RESOURCE_EXHAUSTED', message:
+      'Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.6-flash',
+      details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '30s' }],
+    } }), { status: 429 }),
+  }), error => {
+    assert.equal(error.ocrDiagnostic.quotaReason, 'zero_quota');
+    assert.match(error.message, /zero quota/);
+    assert.doesNotMatch(error.message, /Retry after/);
+    return true;
+  });
+});

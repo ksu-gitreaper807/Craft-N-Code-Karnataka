@@ -158,7 +158,7 @@ export async function assistPseudocode(body, { env = process.env, fetchImpl = fe
       let data;
       try { data = await readLimited(response, 16 * 1024); } catch {}
       const diagnostic = report('failure', { httpStatus: response.status, ...providerFailure(response, data) });
-      const message = response.status === 429 ? 'Gemini reached a quota or rate limit. Check Gemini usage and retry.' :
+      const message = response.status === 429 ? diagnostic.quotaReason === 'zero_quota' ? 'Gemini reports a zero quota for this model in the Google project. Check model access and project billing/quota in AI Studio.' : 'Gemini reached a project quota or rate limit. New keys in the same project share that quota. Check Gemini usage and retry.' :
         response.status === 402 ? 'Gemini reports depleted billing credits.' :
         [401, 403].includes(response.status) ? 'Gemini rejected the API key or model access.' : 'Gemini could not prepare this lesson.';
       lastFailure = Object.assign(fail(`${message} (HTTP ${response.status})`, response.status === 429 ? 429 : 502), { diagnostic });
