@@ -1,3 +1,4 @@
+import { boardFile, importBoard, openPanel } from './helpers.js';
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { selectWritingRegion } from './board-helpers.js';
@@ -6,25 +7,25 @@ async function pythonBoard(page) {
   await page.goto('/');
   await selectWritingRegion(page);
   await page.getByRole('radio', { name: 'Python', exact: true }).check();
-  await page.getByRole('tab', { name: 'Source & input', exact: true }).click();
+  await openPanel(page);
 }
 
 test('right-panel language toggle runs actual Python and maps syntax and runtime errors', async ({ page }) => {
   await pythonBoard(page);
-  const source = page.getByLabel(/CONFIRMED SOURCE/);
+  const source = page.getByLabel(/CODE THAT RUNS/);
   await source.fill('from collections import deque\n\na, b = map(int, input().split())\nprint(sum(deque([a, b])))\n');
   await page.getByLabel('STANDARD INPUT · BLUE INK').fill('3 5\n');
   const sent = page.waitForRequest('**/api/run');
   await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
   expect((await sent).postDataJSON().language).toBe('python');
   await expect(page.locator('.terminal pre')).toHaveText('8\n');
-  await page.getByRole('tab', { name: 'Source & input' }).click();
+  await openPanel(page);
   await source.fill('\n\nif True\n    print(1)\n');
   await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
   await expect(page.locator('.result-status')).toContainText('Check the syntax');
   await expect(page.locator('.diagnostic').first()).toContainText('L3');
   await expect(page.locator('.diagnostic').first()).toContainText('SyntaxError');
-  await page.getByRole('tab', { name: 'Source & input' }).click();
+  await openPanel(page);
   await source.fill('\n\nprint(1 / 0)\n');
   await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
   await expect(page.locator('.diagnostic').first()).toContainText('ZeroDivisionError');
@@ -36,7 +37,9 @@ test('right-panel language toggle runs actual Python and maps syntax and runtime
 test('Python cases run the selected language and download/import restores that language', async ({ page }, testInfo) => {
   await pythonBoard(page);
   const program = 'print(int(input()) * 2)\n';
-  await page.getByLabel(/CONFIRMED SOURCE/).fill(program);
+  // The editor holds the code that runs; the board text is what a download keeps.
+  await importBoard(page, boardFile({ code: program, language: 'python' }));
+  await openPanel(page);
   await page.getByRole('tab', { name: 'Cases', exact: true }).click();
   await page.locator('#case-input-1').fill('5\n');
   await page.locator('.case-check input').first().check();
@@ -54,8 +57,8 @@ test('Python cases run the selected language and download/import restores that l
   await expect(page.getByRole('radio', { name: 'C', exact: true })).toBeChecked();
   await page.locator('input[type=file]').setInputFiles(path);
   await expect(page.getByRole('radio', { name: 'Python', exact: true })).toBeChecked();
-  await page.getByRole('tab', { name: 'Source & input' }).click();
-  await expect(page.getByLabel(/CONFIRMED SOURCE/)).toHaveValue(program);
+  await openPanel(page);
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(program);
 });
 
 for (const level of [2, 3]) {
@@ -69,15 +72,15 @@ for (const level of [2, 3]) {
     });
     await pythonBoard(page);
     const original = level === 2 ? 'for value in range(3)\n    print(value)' : 'Print the numbers zero through two, one per line.';
-    await page.getByLabel(/CONFIRMED SOURCE/).fill(original);
+    await page.getByLabel(/CODE THAT RUNS/).fill(original);
     await page.getByRole('slider', { name: 'Pseudocode level' }).focus();
     await page.keyboard.press('Home');
     for (let i = 1; i < level; i++) await page.keyboard.press('ArrowRight');
     await page.getByRole('button', { name: level === 2 ? 'Correct & run' : 'Generate & run', exact: true }).click();
     await expect(page.getByLabel('Generated Python', { exact: true })).toContainText('for value in range(3)');
     await expect(page.locator('.terminal pre')).toHaveText('0\n1\n2\n');
-    await page.getByRole('tab', { name: 'Source & input' }).click();
-    await expect(page.getByLabel(/CONFIRMED SOURCE/)).toHaveValue(original);
+    await openPanel(page);
+    await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(original);
   });
 }
 

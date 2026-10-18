@@ -1,3 +1,4 @@
+import { openPanel } from './helpers.js';
 import { selectWritingRegion } from './board-helpers.js';
 import { readFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
@@ -10,7 +11,7 @@ async function prepare(page) {
   await page.route('**/api/health', (route) => route.fulfill({ json: { runner: { available: true }, ocr: { available: true } } }));
   await page.goto('/');
   await page.getByLabel('Demo lesson').selectOption('sum');
-  await page.getByRole('tab', { name: 'Source & input' }).click();
+  await openPanel(page);
 }
 
 async function level(page, number) {
@@ -33,7 +34,7 @@ for (const number of [1, 2, 3]) {
       return route.fulfill({ json: number === 1 ? { ...compiled, status: 'compile_error', stdout: '', compilerOutput: 'board.c:1: error: O undeclared' } : compiled });
     });
     await prepare(page);
-    await page.getByLabel(/CONFIRMED SOURCE/).fill(originals[number]);
+    await page.getByLabel(/CODE THAT RUNS/).fill(originals[number]);
     await page.getByLabel('STANDARD INPUT · BLUE INK').fill('7\n\n');
     await level(page, number);
     expect(calls).toHaveLength(0);
@@ -47,8 +48,8 @@ for (const number of [1, 2, 3]) {
     expect(runs).toEqual([{ source: number === 1 ? originals[number] : corrected, stdin: '7\n\n' }]);
     if (number === 1) expect(calls[0].compilerOutput).toContain('O undeclared');
     else await expect(page.locator('.terminal pre')).toHaveText('5\n');
-    await page.getByRole('tab', { name: 'Source & input' }).click();
-    await expect(page.getByLabel(/CONFIRMED SOURCE/)).toHaveValue(originals[number]);
+    await openPanel(page);
+    await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(originals[number]);
     if (number > 1) {
       await level(page, 1);
       await page.getByRole('tab', { name: 'Output', exact: true }).click();
@@ -64,7 +65,7 @@ test('a pending generation is not compiled after the board changes', async ({ pa
   await page.route('**/api/pseudocode', async (route) => { await gate; await route.fulfill({ json: { ...response, level: 3 } }); });
   await page.route('**/api/run', (route) => { runs++; return route.fulfill({ json: compiled }); });
   await prepare(page);
-  await page.getByLabel(/CONFIRMED SOURCE/).fill('Print 5.');
+  await page.getByLabel(/CODE THAT RUNS/).fill('Print 5.');
   await level(page, 3);
   const sent = page.waitForRequest('**/api/pseudocode');
   await page.getByRole('button', { name: 'Generate & run', exact: true }).click();
@@ -97,15 +98,17 @@ test('Gemini quota failures do not compile a level two or three draft', async ({
   await expect(page.locator('.raw-output pre')).toContainText('token_limit_reached');
 });
 
-test('a handwritten algorithm requires confirmation before Gemini generates and compiles a demonstration', async ({ page }, testInfo) => {
+for (const [number, original] of [[2, 'printf("%d", 5)'], [3, 'Print five.']]) {
+test(`handwritten level ${number} source requires confirmation before Gemini repairs or generates and compiles it`, async ({ page }, testInfo) => {
   let assists = 0, runs = 0;
   await page.route('**/api/health', (route) => route.fulfill({ json: { runner: { available: true }, ocr: { available: true } } }));
   await page.route('**/api/ocr', (route) => route.fulfill({ json: { provider: 'test-fixture', model: 'fixture-only', durationMs: 1,
-    requiresConfirmation: true, stdin: [], code: [{ text: 'Print five.', box: [10, 10, 900, 900], uncertain: false, alternatives: [] }] } }));
+    requiresConfirmation: true, stdin: [], code: [{ text: original, box: [10, 10, 900, 900], uncertain: false, alternatives: [] }] } }));
   await page.route('**/api/pseudocode', (route) => {
     assists++;
-    expect(route.request().postDataJSON().source).toBe('Print five.');
-    return route.fulfill({ json: { ...response, level: 3 } });
+    expect(route.request().postDataJSON().source).toBe(original);
+    expect(route.request().postDataJSON().level).toBe(number);
+    return route.fulfill({ json: { ...response, level: number } });
   });
   await page.route('**/api/run', (route) => {
     runs++;
@@ -119,15 +122,15 @@ test('a handwritten algorithm requires confirmation before Gemini generates and 
   await page.mouse.down();
   await page.mouse.move(area.x + area.width * .4 + 30, area.y + area.height * .45 + 10, { steps: 5 });
   await page.mouse.up();
-  await level(page, 3);
+  await level(page, number);
   await page.getByRole('button', { name: 'Read & review handwriting', exact: true }).click();
-  await expect(page.getByLabel('Code line 1', { exact: true })).toHaveValue('Print five.');
+  await expect(page.getByLabel('Code line 1', { exact: true })).toHaveValue(original);
   expect(assists).toBe(0);
   expect(runs).toBe(0);
   await page.getByRole('checkbox', { name: 'I checked the code and input against the handwriting.' }).check();
   await page.getByRole('button', { name: 'Use confirmed code', exact: true }).click();
   expect(assists).toBe(0);
-  await page.getByRole('button', { name: 'Generate & run', exact: true }).click();
+  await page.getByRole('button', { name: number === 2 ? 'Correct & run' : 'Generate & run', exact: true }).click();
   await expect(page.locator('.terminal pre')).toHaveText('5\n');
   await expect(page.getByLabel('Generated C', { exact: true })).toHaveText(corrected);
   await expect(page.getByRole('button', { name: 'Use this C on board', exact: true })).toHaveCount(0);
@@ -140,9 +143,11 @@ test('a handwritten algorithm requires confirmation before Gemini generates and 
   await file.saveAs(path);
   const saved = JSON.parse(await readFile(path, 'utf8'));
   expect(saved.elements.some((item) => item.type === 'freedraw')).toBe(true);
-  expect(saved.verifier.ocr.reviewed.code).toEqual(['Print five.']);
+  expect(saved.verifier.ocr.reviewed.code).toEqual([original]);
   expect(saved.verifier.result.source).toBe(corrected);
 });
+
+}
 
 test('level one retains the actual compiler result when Gemini fails', async ({ page }) => {
   await page.route('**/api/pseudocode', (route) => route.fulfill({ status: 429, json: { error: 'Gemini quota reached.' } }));

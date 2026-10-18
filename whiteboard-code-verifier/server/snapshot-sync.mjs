@@ -50,7 +50,7 @@ export function createSnapshotSync({ git, hasHistory }) {
       // A save during a push leaves a newer HEAD. Start its push after the first one completes.
       if (!lastError) {
         void status().then((current) => {
-          if (current.remoteConfigured && current.localCommit && current.localCommit !== current.lastSyncedCommit) void sync();
+          if (current.remoteConfigured && current.localCommit && current.localCommit !== current.lastSyncedCommit) queue();
         }).catch(() => {});
       }
     }

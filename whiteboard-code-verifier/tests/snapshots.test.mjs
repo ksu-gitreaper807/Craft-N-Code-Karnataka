@@ -265,3 +265,56 @@ test('Python snapshots preserve language, save board.py and verify portable repl
   const verified = await execute('bash', ['build.sh', '--verify'], { cwd: join(root, saved.id), timeout: 5000 });
   assert.match(verified.stdout, /integrity verified/);
 });
+
+test('automatic snapshots keep the whole original board but bundle the actual compiled source, case input and result', async (t) => {
+  const { root, store } = await archive(t);
+  const board = scene();
+  board.elements.push({ id: 'outside-note', type: 'text', x: 4000, y: 3000, width: 300, height: 30,
+    strokeColor: '#7048e8', fontSize: 20, text: 'Explanation outside the program' });
+  const actual = '#include <queue.h>\nint main(void) { broken; }';
+  board.verifier.result = { status: 'success', stdout: 'Old result from a previous run' };
+  board.verifier.execution = { kind: 'case', level: 2, language: 'c', source: actual, stdin: 'different case input\n\n',
+    result: { status: 'compile_error', stdout: '', compilerOutput: 'broken is undeclared', diagnostics: [] } };
+  const saved = await store.save({ title: 'Automatic compile', scene: board });
+  const folder = join(root, saved.id);
+  const reopened = await store.read(saved.id);
+  assert.equal(reopened.elements[1].text, source);
+  assert.equal(reopened.elements.at(-1).text, 'Explanation outside the program');
+  assert.equal(reopened.verifier.execution.source, actual);
+  assert.equal(reopened.verifier.result, null);
+  assert.equal(await readFile(join(folder, 'board.c'), 'utf8'), actual);
+  assert.equal(await readFile(join(folder, 'input.txt'), 'utf8'), 'different case input\n\n');
+  assert.ok((await readdir(join(folder, 'lib'))).includes('queue.h'));
+  const evidence = JSON.parse(await readFile(join(folder, 'result.json'), 'utf8'));
+  assert.equal(evidence.provenance, 'browser-reported');
+  assert.equal(evidence.result.status, 'compile_error');
+  assert.equal(evidence.result.source, actual);
+  assert.equal(evidence.result.kind, 'case');
+  assert.match((await execute('bash', ['build.sh', '--verify'], { cwd: folder })).stdout, /integrity verified/);
+});
+
+test('automatic Python snapshots support editor-only source on an empty writing frame', async (t) => {
+  const { root, store } = await archive(t);
+  const board = scene();
+  board.elements = board.elements.filter(el => el.type === 'frame');
+  board.verifier.language = 'python';
+  board.verifier.execution = { kind: 'run', level: 1, language: 'python', source: 'print(8)', stdin: '', result: { status: 'success', stdout: '8\n' } };
+  const saved = await store.save({ scene: board });
+  assert.equal(await readFile(join(root, saved.id, 'board.py'), 'utf8'), 'print(8)');
+  assert.equal((await store.read(saved.id)).elements.length, 1);
+});
+
+test('execution metadata cannot bypass language, size or handwriting review checks', async (t) => {
+  const { store } = await archive(t);
+  const board = scene();
+  const execution = { kind: 'run', level: 1, language: 'c', source: 'int main(void) {}', stdin: '', result: { status: 'success' } };
+  for (const changes of [{ language: 'python' }, { level: 0 }, { kind: 'unknown' }, { result: {} },
+    { source: 'x'.repeat(32_769) }, { stdin: '\0' }, { source: null }]) {
+    board.verifier.execution = { ...execution, ...changes };
+    await assert.rejects(store.save({ scene: board }), { status: 400 });
+  }
+  board.verifier.execution = execution;
+  board.elements.push({ id: 'ink', type: 'freedraw', frameId: 'frame', x: 50, y: 50, width: 20, height: 20,
+    strokeColor: '#1e1e1e', points: [[0, 0], [20, 20]] });
+  await assert.rejects(store.save({ scene: board }), /confirm/);
+});

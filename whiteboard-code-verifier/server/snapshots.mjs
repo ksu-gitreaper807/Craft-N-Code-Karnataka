@@ -43,6 +43,17 @@ function snapshotProgram(scene) {
     }
     program = ocr.program;
   } else program = extractProgram(scene.elements, frameId);
+  const execution = scene.verifier.execution;
+  if (execution != null) {
+    if (!execution || execution.language !== language || ![1, 2, 3].includes(execution.level) ||
+        !['run', 'case'].includes(execution.kind) || !execution.result ||
+        !['success', 'compile_error', 'runtime_error', 'timeout', 'output_limit', 'invalid_source', 'runner_error'].includes(execution.result.status)) {
+      throw invalid('Snapshot execution metadata is invalid.');
+    }
+    // The complete board remains unchanged. Replay uses the actual submitted
+    // source/input, which can differ after editor edits, templates, or Gemini.
+    program = { ...program, source: execution.source, stdin: execution.stdin };
+  }
   if (typeof program.source !== 'string' || !program.source.trim() || program.source.includes('\0') || Buffer.byteLength(program.source) > 32_768 ||
       typeof program.stdin !== 'string' || program.stdin.includes('\0') || Buffer.byteLength(program.stdin) > 8192) {
     throw invalid('Snapshot source must be nonempty and at most 32 KiB; input must be at most 8 KiB, without NUL characters.');
@@ -59,7 +70,8 @@ export async function prepareSnapshot(body, now = new Date()) {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'lesson';
   const id = `${day}/${createdAt.slice(11, 19).replaceAll(':', '-')}-${slug}-${randomUUID().slice(0, 8)}`;
   const savedScene = { ...scene, elements: scene.elements.filter((el) => !isOverlay(el)),
-    verifier: { ...scene.verifier, language: program.language, snapshot: { title, createdAt } } };
+    verifier: { ...scene.verifier, ...(scene.verifier.execution ? { result: null } : {}),
+      language: program.language, snapshot: { title, createdAt } } };
   // Compact JSON keeps large stroke arrays within the board import limit.
   const serialized = JSON.stringify(savedScene) + '\n';
   if (Buffer.byteLength(serialized) > 2_000_000) throw invalid('The saved scene exceeds the 2 MB board import limit.');

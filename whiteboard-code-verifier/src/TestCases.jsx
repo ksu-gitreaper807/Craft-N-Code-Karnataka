@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { apiFetch } from './api.js';
+import { apiFetch, readApiJson } from './api.js';
 import { languagePayload } from './languages.js';
 
 const MAX_CASES = 5;
@@ -9,7 +9,7 @@ const statuses = [
   ['timeout', 'Time limit'], ['output_limit', 'Output limit'],
 ];
 
-export default function TestCases({ program, signature, disabled, onBusy }) {
+export default function TestCases({ program, signature, disabled, onBusy, captureScene, onCompiled }) {
   const [cases, setCases] = useState([emptyCase(1)]);
   const [nextId, setNextId] = useState(2);
   const [results, setResults] = useState(null);
@@ -38,15 +38,17 @@ export default function TestCases({ program, signature, disabled, onBusy }) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 30_000);
         try {
+          const scene = captureScene();
           const response = await apiFetch('/api/run', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ source: submitted.source, stdin: item.stdin, ...languagePayload(submitted.language) }), signal: controller.signal,
           });
-          const data = await response.json();
+          const data = await readApiJson(response);
           if (!response.ok) throw new Error(data.error ?? `Runner returned HTTP ${response.status}.`);
           outcomes.push({ ...item, actualStatus: data.status, actualOutput: data.stdout,
             diagnostics: data.diagnostics, passed: data.status === item.expectedStatus &&
               (!item.checkOutput || data.stdout === item.expectedOutput) });
+          await onCompiled(scene, { ...submitted, stdin: item.stdin }, data);
         } finally { clearTimeout(timer); }
       }
       setResults({ signature, outcomes });

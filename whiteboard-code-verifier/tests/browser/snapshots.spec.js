@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { boardFile, importBoard, openPanel } from './helpers.js';
 
 const archive = fileURLToPath(new URL('../../test-results/lesson-snapshots/', import.meta.url));
 
@@ -13,16 +14,15 @@ test('unconfigured hosted history explains the missing GitHub setup and disables
   } }));
   await page.goto('/');
   await page.getByLabel('Demo lesson').selectOption('sum');
+  await openPanel(page);
   await page.getByRole('tab', { name: 'History', exact: true }).click();
-  await expect(page.getByLabel('Verification controls and results')).toContainText('Configure SNAPSHOT_GITHUB_TOKEN');
+  await expect(page.getByLabel('Code, verification controls and results')).toContainText('Configure SNAPSHOT_GITHUB_TOKEN');
   await expect(page.getByRole('button', { name: 'Save lesson snapshot', exact: true })).toBeDisabled();
 });
 
 test('compares a committed teaching header with the current version without opening the board', async ({ page }) => {
   await page.goto('/');
-  await page.getByLabel('Demo lesson').selectOption('sum');
-  await page.getByRole('tab', { name: 'Source & input' }).click();
-  await page.getByLabel(/CONFIRMED SOURCE/).fill('#include <queue.h>\nint main(void) { Queue q; queue_init(&q); queue_free(&q); return 0; }');
+  await importBoard(page, boardFile({ code: '#include <queue.h>\nint main(void) { Queue q; queue_init(&q); queue_free(&q); return 0; }' }));
   const savedResponse = page.waitForResponse((response) => response.url().endsWith('/api/snapshots') && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Save lesson snapshot' }).click();
   const saved = await (await savedResponse).json();
@@ -39,10 +39,10 @@ test('saves literal lesson files with real Git history and reopens the saved boa
   let runs = 0;
   page.on('request', (request) => { if (request.url().endsWith('/api/run')) runs++; });
   await page.goto('/');
-  await page.getByLabel('Demo lesson').selectOption('sum');
-  await page.getByRole('tab', { name: 'Source & input', exact: true }).click();
   const source = '#include <stdio.h>\n\nint main(void) {\n    unknown_symbol;\n}\n';
-  await page.getByLabel(/CONFIRMED SOURCE/).fill(source);
+  // The editor holds the code that runs; the board text is what a snapshot saves.
+  await importBoard(page, boardFile({ code: source }));
+  await openPanel(page);
   await page.getByLabel('STANDARD INPUT · BLUE INK').fill('3 5\n\n');
   const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/snapshots') && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Save lesson snapshot', exact: true }).click();
@@ -66,10 +66,11 @@ test('saves literal lesson files with real Git history and reopens the saved boa
   expect(next.id).not.toBe(saved.id);
   await expect(page.locator('.snapshot-history')).toContainText(next.commit.slice(0, 8));
   await page.getByLabel('Demo lesson').selectOption('queue');
+  await openPanel(page);
   await page.getByRole('tab', { name: 'History', exact: true }).click();
   const entry = page.locator('.snapshot-history li').filter({ hasText: saved.id });
   await entry.getByRole('button', { name: 'Open saved board' }).click();
-  await expect(page.getByLabel(/CONFIRMED SOURCE/)).toHaveValue(source);
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(source);
   await expect(page.getByLabel('STANDARD INPUT · BLUE INK')).toHaveValue('3 5\n\n');
   expect(runs).toBe(0);
 });
@@ -116,6 +117,7 @@ test('blocks unconfirmed or changed ink and saves teacher-corrected C without re
   await page.getByRole('button', { name: 'Pen: code', exact: true }).click();
   await draw(50);
   await expect(page.getByRole('button', { name: 'Save lesson snapshot', exact: true })).toBeDisabled();
+  await openPanel(page);
   await page.getByRole('tab', { name: 'History', exact: true }).click();
   await page.locator('.snapshot-history li').filter({ hasText: saved.id }).getByRole('button', { name: 'Open saved board' }).click();
   await expect(page.getByRole('tab', { name: 'Handwriting', exact: true })).toHaveAttribute('aria-selected', 'true');

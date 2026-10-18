@@ -2,6 +2,7 @@ import { selectWritingRegion } from './board-helpers.js';
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { lessons } from '../../src/lessons.js';
+import { boardFile, importBoard } from './helpers.js';
 
 // The provider is explicitly stubbed here. These tests verify capture/review and
 // real Docker execution, not the accuracy of a live handwriting recognition model.
@@ -32,6 +33,54 @@ async function drawStroke(page, offset = 0) {
   await page.mouse.move(x + 50, y + 5, { steps: 5 });
   await page.mouse.up();
 }
+
+test('a hosting timeout page becomes an OCR timeout with unknown quota and never executes code', async ({ page }) => {
+  let runs = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/run')) runs++; });
+  await page.route('**/api/health', route => route.fulfill({ json: {
+    runner: { available: false }, ocr: { available: true, provider: 'test-fixture', model: 'fixture-only' },
+  } }));
+  await page.route('**/api/ocr', route => route.fulfill({ status: 504, contentType: 'text/html',
+    body: '<html><h1>FUNCTION_INVOCATION_TIMEOUT</h1></html>' }));
+  const file = boardFile({ code: 'int main(void) { return 0; }' });
+  const board = JSON.parse(file.buffer.toString());
+  board.elements.push({ id: 'test-ink', type: 'freedraw', frameId: 'frame', x: 60, y: 80, width: 40, height: 20,
+    strokeColor: '#1e1e1e', points: [[0, 0], [40, 20]] });
+  file.buffer = Buffer.from(JSON.stringify(board));
+  await page.goto('/');
+  await importBoard(page, file);
+  await page.getByRole('button', { name: 'Read & review handwriting' }).click();
+  await expect(page.locator('.handwriting-panel')).toContainText('Handwriting recognition timed out at the hosting service (HTTP 504)');
+  await expect(page.locator('.handwriting-panel')).toContainText('Gemini token/quota status is unknown');
+  await expect(page.locator('.handwriting-panel')).not.toContainText('JSON.parse');
+  expect(runs).toBe(0);
+});
+
+test('text-only OCR keeps review, literal mistakes and editor diagnostics without invented canvas locations', async ({ page }) => {
+  await configureProviderFixture(page);
+  let runs = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/run')) runs++; });
+  await page.route('**/api/ocr', route => route.fulfill({ json: {
+    provider: 'test-fixture', model: 'compact-fixture', durationMs: 1, requiresConfirmation: true,
+    code: ['int main(void) {', '    return 0', '}'].map((text, index) => ({ text, uncertain: index === 1, box: null, alternatives: [] })), stdin: [],
+  } }));
+  await page.goto('/');
+  await selectWritingRegion(page);
+  await drawStroke(page);
+  await page.getByRole('button', { name: 'Read & review handwriting', exact: true }).click();
+  await expect(page.getByLabel('Code line 2', { exact: true })).toHaveValue('    return 0');
+  await expect(page.locator('.ocr-preview svg')).toHaveCount(0);
+  await expect(page.locator('.handwriting-panel')).toContainText('text-only recognition does not provide line locations');
+  expect(runs).toBe(0);
+  await expect(page.getByRole('button', { name: 'Use confirmed code', exact: true })).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'I checked the code and input against the handwriting.' }).check();
+  await page.getByRole('button', { name: 'Use confirmed code', exact: true }).click();
+  await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
+  await expect(page.locator('.result-status')).toContainText('Check the syntax');
+  await expect(page.locator('.diagnostic').first()).toContainText('expected');
+  await expect(page.getByLabel('Automatic snapshot status')).toContainText('Full-board snapshot saved');
+  expect(runs).toBe(1);
+});
 
 test('captures pen ink, requires edited teacher confirmation, then runs the confirmed C in Docker', async ({ page }, testInfo) => {
   await configureProviderFixture(page);
@@ -68,7 +117,7 @@ test('captures pen ink, requires edited teacher confirmation, then runs the conf
   await page.getByRole('checkbox', { name: 'I checked the code and input against the handwriting.' }).check();
   await page.getByRole('button', { name: 'Use confirmed code' }).click();
   expect(runRequests).toBe(0);
-  await expect(page.getByLabel(/CONFIRMED SOURCE/)).toHaveValue('#include <stdio.h>\n\nint main(void) {\n    puts("handwritten");\n    return 0;\n}');
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue('#include <stdio.h>\n\nint main(void) {\n    puts("handwritten");\n    return 0;\n}');
   await page.getByRole('button', { name: 'Verify & run' }).click();
   await expect(page.locator('.terminal pre')).toHaveText('handwritten\n');
   expect(runRequests).toBe(1);
@@ -98,7 +147,7 @@ test('captures blue handwriting separately while preserving exact typed code', a
   expect(capture.code).toBeUndefined();
   await page.getByRole('checkbox', { name: 'I checked the code and input against the handwriting.' }).check();
   await page.getByRole('button', { name: 'Use confirmed code' }).click();
-  await expect(page.getByLabel(/CONFIRMED SOURCE/)).toHaveValue(lessons[0].source);
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(lessons[0].source);
   await page.getByRole('button', { name: 'Verify & run' }).click();
   await expect(page.locator('.terminal pre')).toHaveText('3 + 5 = 8\n');
 });

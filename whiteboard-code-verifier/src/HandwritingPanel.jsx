@@ -2,7 +2,7 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } f
 import { captureHandwriting } from './capture.js';
 import { extractProgram } from './board.js';
 import { inkFingerprint, makeReviewDraft, reviewedProgram } from './handwriting.js';
-import { apiFetch } from './api.js';
+import { apiFetch, readApiJson } from './api.js';
 import { languagePayload } from './languages.js';
 
 const HandwritingPanel = forwardRef(function HandwritingPanel({
@@ -46,7 +46,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
         body: JSON.stringify({ ...Object.fromEntries(Object.entries(captures).map(([channel, capture]) => [channel, capture.dataUrl])), ...languagePayload(language) }),
       });
-      const recognition = await response.json();
+      const recognition = await readApiJson(response);
       if (!response.ok) {
         setDiagnostic(recognition.diagnostic ?? null);
         throw new Error(recognition.error ?? `OCR returned HTTP ${response.status}.`);
@@ -54,6 +54,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
       setDraft(makeReviewDraft(recognition, captures, typed, snapshotFingerprint, frameId));
       setSelected({ channel: 'code', index: 0 });
     } catch (caught) {
+      if (caught.diagnostic) setDiagnostic(caught.diagnostic);
       if (caught.name === 'AbortError') setDiagnostic({ provider: 'gemini', reason: 'browser_timeout', quotaStatus: 'unknown' });
       setError(caught.name === 'AbortError' ? 'Handwriting recognition timed out. Gemini token/quota status is unknown. Nothing was executed.' : caught.message);
     } finally {
@@ -97,7 +98,7 @@ const HandwritingPanel = forwardRef(function HandwritingPanel({
     {stale && <div className="stale-notice">The ink changed. Read the frame again before confirming.</div>}
     {draft && draft.frameId === frameId && <>
       <p className="ocr-provenance">{draft.raw.provider} · {draft.raw.model} · {draft.raw.durationMs} ms</p>
-      <p className="panel-help">“Check” marks model-reported ambiguity, not a measured confidence score. Preview boxes are approximate.</p>
+      <p className="panel-help">“Check” marks model-reported ambiguity, not a measured confidence score. Compare the text with the captured image; text-only recognition does not provide line locations.</p>
       {['code', 'stdin'].map((channel) => <div className="ocr-channel" key={channel}>
         <h4>{channel === 'code' ? 'Code or algorithm' : 'Standard input'}</h4>
         {draft.captures[channel] && <div className="ocr-preview-scroll"><div className="ocr-preview">

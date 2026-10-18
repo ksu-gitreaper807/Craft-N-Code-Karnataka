@@ -1,3 +1,4 @@
+import { openPanel } from './helpers.js';
 import { test, expect } from '@playwright/test';
 
 test('a static frontend explains the missing API and keeps board editing available', async ({ page }) => {
@@ -7,9 +8,9 @@ test('a static frontend explains the missing API and keeps board editing availab
   await expect(page.locator('.inspector > .runner-notice span')).toContainText('Boardroom API endpoint is missing.');
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Save lesson snapshot' })).toBeDisabled();
-  await page.getByRole('tab', { name: 'Source & input' }).click();
-  await page.getByLabel(/CONFIRMED SOURCE/).fill('int main(void) { return 0; }');
-  await expect(page.getByLabel(/CONFIRMED SOURCE/)).toHaveValue('int main(void) { return 0; }');
+  await openPanel(page);
+  await page.getByLabel(/CODE THAT RUNS/).fill('int main(void) { return 0; }');
+  await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue('int main(void) { return 0; }');
   await page.getByRole('tab', { name: 'Handwriting' }).click();
   await expect(page.getByRole('button', { name: 'Read handwriting' })).toBeDisabled();
 });
@@ -47,8 +48,9 @@ test('a serverless API keeps C and handwriting available while explaining histor
   await page.getByLabel('Demo lesson').selectOption('sum');
   await expect(page.getByText('Runner ready')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save lesson snapshot' })).toBeDisabled();
+  await openPanel(page);
   await page.getByRole('tab', { name: 'History' }).click();
-  await expect(page.getByText('Lesson history needs persistent storage.')).toBeVisible();
+  await expect(page.getByText('Lesson history is unavailable.', { exact: false })).toBeVisible();
   await page.getByRole('tab', { name: 'Libraries' }).click();
   await expect(page.locator('pre').filter({ hasText: 'stack_init' }).first()).toBeVisible();
 });

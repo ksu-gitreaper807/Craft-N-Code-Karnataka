@@ -55,11 +55,15 @@ test('uses the documented Gemini image/schema request and validates the structur
   assert.equal(sent.url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
   assert.equal(sent.options.headers['x-goog-api-key'], env.GEMINI_API_KEY);
   assert.equal(sent.body.store, false);
+  assert.equal(sent.body.generation_config.thinking_level, 'low');
   assert.equal(sent.body.response_format.mime_type, 'application/json');
   assert.equal(sent.body.response_format.schema.properties.code.maxItems, undefined);
   assert.equal(sent.body.response_format.schema.properties.stdin.maxItems, undefined);
   assert.equal(sent.body.input.filter((part) => part.type === 'image').length, 1);
-  assert.match(sent.body.input[0].text, /Never insert/);
+  assert.deepEqual(sent.body.response_format.schema.properties.code.items.required, ['text', 'uncertain']);
+  assert.equal(sent.body.response_format.schema.properties.code.items.properties.box, undefined);
+  assert.equal(sent.body.response_format.schema.properties.code.items.properties.alternatives, undefined);
+  assert.match(sent.body.input[0].text, /Never fix code or insert/);
   assert.equal(result.code[0].text, 'int main(void) {}');
   assert.equal(result.requiresConfirmation, true);
   assert.equal(result.provider, 'gemini');
@@ -67,6 +71,23 @@ test('uses the documented Gemini image/schema request and validates the structur
   assert.equal(logs[0].event, 'success');
   assert.equal(logs[0].quotaStatus, 'not_reported');
   assert.ok(!JSON.stringify(logs).includes(env.GEMINI_API_KEY));
+});
+
+test('compact OCR keeps intentional errors, indentation, blank lines and ambiguity without inventing locations', async () => {
+  const texts = ['if value != 0', '    print("O;\\n")', '', '    total = value & 1'];
+  const result = await recognizeHandwriting({ code: PNG, language: 'python' }, { env, logger: () => {}, fetchImpl: async () =>
+    new Response(JSON.stringify({ status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text',
+      text: JSON.stringify({ code: texts.map((text, index) => ({ text, uncertain: index === 1 })), stdin: [] }) }] }] })),
+  });
+  assert.deepEqual(result.code.map(line => line.text), texts);
+  assert.equal(result.code[1].uncertain, true);
+  assert.ok(result.code.every(line => line.box === null && line.alternatives.length === 0));
+  assert.equal(result.requiresConfirmation, true);
+  for (const line of [{ text: 'x' }, { text: 'x\ny', uncertain: false }, { text: 'x', uncertain: 'maybe' }]) {
+    assert.throws(() => validateTranscription({ code: [line], stdin: [] }, { code: 'image' }, { compact: true }), /invalid text/);
+  }
+  assert.throws(() => validateTranscription({ code: Array.from({ length: 251 }, () => ({ text: 'x', uncertain: false })), stdin: [] },
+    { code: 'image' }, { compact: true }), /line list/);
 });
 
 test('distinguishes token quotas, general limits, and depleted credits without exposing provider payloads', async () => {
@@ -118,6 +139,20 @@ test('timeouts before headers and during the body leave quota status unknown', a
     });
     assert.equal(logs[0].quotaStatus, 'unknown');
   }
+});
+
+test('OCR cancels a stalled provider before the 60-second hosting deadline and returns safe timeout diagnostics', async (t) => {
+  t.mock.method(AbortSignal, 'timeout', (milliseconds) => {
+    assert.ok(milliseconds <= 50_000, 'leave at least ten seconds for the hosted JSON error response');
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('provider stalled', 'TimeoutError')), 1);
+    return controller.signal;
+  });
+  await assert.rejects(recognizeHandwriting({ code: PNG }, { env, logger: () => {},
+    fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }),
+  }), (error) => error.status === 504 && error.ocrDiagnostic.reason === 'timeout' && error.ocrDiagnostic.quotaStatus === 'unknown');
 });
 
 test('keeps HTTP 429 evidence when error bodies are malformed or oversized and honors Retry-After', async () => {
