@@ -160,6 +160,10 @@ test('keeps handwriting action above the panel toggle without clipping', async (
     expect(run.x + run.width).toBeLessThanOrEqual(pane.x + pane.width);
     expect(run.y + run.height).toBeLessThanOrEqual(pane.y + pane.height);
     await expect(action).toBeInViewport({ ratio: 1 });
+    expect(run.width).toBeLessThanOrEqual(160);
+    const overflow = await page.locator('.toolstrip').evaluate(el =>
+      [el, el.querySelector('.toolstrip-controls')].some(item => item.scrollWidth > item.clientWidth));
+    expect(overflow).toBe(false);
     await page.screenshot({ path: testInfo.outputPath(`handwriting-actions-${width}.png`) });
   }
 });
