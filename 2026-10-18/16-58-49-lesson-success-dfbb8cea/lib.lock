@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "compilerImage": "gcc:14.2.0-bookworm@sha256:b99b86a28812b1e6453a231a947dc43d76fe192788a12f344a9b568bf9f5d24c",
+  "language": "c",
+  "sourceFile": "board.cpp",
+  "compiler": "g++",
+  "standard": "c++17",
+  "files": {
+    ".dockerignore": "3a19eeb0d4803b23efe8ed48165469ea646edb75463e9b8198a32cfca71ecb72",
+    "board.cpp": "96b62d4ec8a12c00a4882f04e59c45822fb41396ead70f0c6f8c98e4f1615093",
+    "board.excalidraw": "6d1f7211c7bc814a3ea6b3cc9d43cbc3254c59368c9250c7b85fa17803850d52",
+    "build.sh": "9c433876a8f4fa2dcbc2aae60ee280f47213942c98ad8c533cf69901b5801d44",
+    "Dockerfile": "86aa0c31d0412fd61a0627cbb468931bce4cd2dfc199e894dd757d37c63528c3",
+    "input.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ocr.json": "7a4de54ff7c454d3fcd36436bc1899160dfc72a95a562b24ddacb81bd1a75929",
+    "replay.py": "a8a166fc66fd6cb05f40b1e0d42482134b4d1d22bafe91044a50be7400572ce2",
+    "result.json": "5a7465cd31a89256ae11d03ad39ca7f59c43f8d29ecb08630240cc07cd88f1ea",
+    "runner.py": "87031260c927650bb36f7a630290078e849118cd7e175a320a940766b58559fe"
+  }
+}
