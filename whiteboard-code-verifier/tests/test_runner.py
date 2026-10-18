@@ -26,6 +26,7 @@ class ParsingTests(unittest.TestCase):
         self.assertIn('Bounded line input', titles)
         self.assertIn('Copies need valid ranges', titles)
         self.assertEqual(sum(title == 'Copies need valid ranges' for title in titles), 1)
+        self.assertEqual(runner.teaching_notes('std::binary_search(a.begin(), a.end(), 3);'), [])
 
     def test_rejects_untrusted_include_forms(self):
         for source in ['#include "/etc/passwd"', '#include </etc/passwd>', '#include HEADER',
@@ -46,8 +47,18 @@ class ParsingTests(unittest.TestCase):
         self.assertEqual(diagnostics[0]['message'], 'heap-use-after-free')
 
 
-@unittest.skipUnless(shutil.which('gcc'), 'GCC is required for trusted integration fixtures')
+@unittest.skipUnless(shutil.which('g++'), 'GCC is required for trusted integration fixtures')
 class CompilerTests(unittest.TestCase):
+    def test_cpp17_stl_and_cpp_diagnostics(self):
+        source = '#include <iostream>\n#include <vector>\n#include <algorithm>\nint main() { std::vector<int> v{3,1,2}; std::sort(v.begin(), v.end()); for (auto n : v) std::cout << n; }'
+        result = execute_fixture({'source': source})
+        self.assertEqual(result['status'], 'success', result)
+        self.assertEqual(result['stdout'], '123')
+        bad = execute_fixture({'source': '#include <iostream>\nint main() {\n unknown_symbol;\n} '})
+        self.assertEqual(bad['status'], 'compile_error', bad)
+        self.assertIn('board.cpp:3:', bad['compilerOutput'])
+        self.assertEqual(bad['diagnostics'][0]['line'], 3)
+
     def test_real_stdin_and_stdout(self):
         result = execute_fixture({'source': '#include <stdio.h>\nint main(void) { int a,b; if(scanf("%d %d",&a,&b)!=2) return 1; printf("%d\\n",a+b); }', 'stdin': '3 5\n'})
         self.assertEqual(result['status'], 'success', result)
@@ -59,7 +70,7 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(result['diagnostics'][0]['line'], 3)
 
     def test_asan_reports_actual_use_after_free(self):
-        source = '#include <stdlib.h>\nint main(void) {\n int *p = malloc(sizeof *p);\n if(!p) return 1;\n *p = 42;\n free(p);\n return *p;\n}\n'
+        source = '#include <stdlib.h>\nint main(void) {\n int *p = (int *)malloc(sizeof *p);\n if(!p) return 1;\n *p = 42;\n free(p);\n return *p;\n}\n'
         result = execute_fixture({'source': source})
         self.assertEqual(result['status'], 'runtime_error', result)
         self.assertIn('heap-use-after-free', result['stderr'])
@@ -149,4 +160,4 @@ class PythonTests(unittest.TestCase):
     def test_unknown_language_is_rejected(self):
         result = execute_fixture({'source': 'print(1)', 'language': 'javascript'})
         self.assertEqual(result['status'], 'invalid_source')
-        self.assertIn('C or Python', result['stderr'])
+        self.assertIn('C++ or Python', result['stderr'])

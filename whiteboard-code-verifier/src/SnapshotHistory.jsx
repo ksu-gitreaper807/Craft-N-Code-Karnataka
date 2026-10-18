@@ -61,7 +61,7 @@ export default function SnapshotHistory({ onOpen }) {
   const selectedHeader = inspected?.headers?.find((header) => header.file === inspected.file);
   return <section className="snapshot-history" aria-label="Saved lesson history">
     <h3>Lesson history</h3>
-    <p className="panel-help">Every compile or run automatically snapshots the whole board, including annotations outside the selected region. The replay bundle saves the exact C or Python source and input used. Opening replaces this canvas; save current work first. Handwriting needs fresh review after opening.</p>
+    <p className="panel-help">Every compile or run automatically snapshots the whole board, including annotations outside the selected region. The replay bundle saves the exact C++ or Python source and input used. Opening replaces this canvas; save current work first. Handwriting needs fresh review after opening.</p>
     <button className="quiet-button" disabled={busy} onClick={() => { refresh(); refreshSync(); }}>{busy ? 'Loading…' : 'Refresh history'}</button>
     {sync && <div className="panel-help" role="status">
       {sync.state === 'empty' && 'No lessons saved yet.'}

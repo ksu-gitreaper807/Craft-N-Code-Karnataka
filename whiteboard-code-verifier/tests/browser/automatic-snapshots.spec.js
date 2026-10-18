@@ -58,7 +58,7 @@ for (const language of ['c', 'python']) {
     expect(scene.elements.some(el => el.id === 'second-frame')).toBe(true);
     expect(scene.elements.find(el => el.id === 'code').text).toBe(original);
     expect(scene.verifier.execution.result.status).toBe(result.status);
-    expect(await savedFile(snapshot, language === 'c' ? 'board.c' : 'board.py')).toBe(actual);
+    expect(await savedFile(snapshot, language === 'c' ? 'board.cpp' : 'board.py')).toBe(actual);
     expect(await savedFile(snapshot, 'input.txt')).toBe('3 5\n\n');
     expect(JSON.parse(await savedFile(snapshot, 'result.json')).result.status).toBe(result.status);
     await expect(page.getByLabel('Automatic snapshot status')).toContainText(snapshot.commit.slice(0, 8));
@@ -78,7 +78,7 @@ test('an Algorithm-mode run archives generated code while preserving the origina
   const saved = savedResponse(page);
   await page.getByRole('button', { name: 'Generate & run', exact: true }).click();
   const snapshot = await (await saved).json();
-  expect(await savedFile(snapshot, 'board.c')).toBe(corrected);
+  expect(await savedFile(snapshot, 'board.cpp')).toBe(corrected);
   const scene = JSON.parse(await savedFile(snapshot, 'board.excalidraw'));
   expect(scene.elements.find(el => el.id === 'code').text).toBe(original);
   expect(scene.elements.some(el => el.id === 'outside-note')).toBe(true);
@@ -100,6 +100,8 @@ test('each input case commits a separate full-board snapshot with its own stdin 
   });
   await page.getByRole('button', { name: 'Run 2 cases', exact: true }).click();
   await expect(page.locator('.case-results li')).toHaveCount(2);
+  // Results are progressive; wait for the last snapshot as well as the last run.
+  await expect(page.getByRole('button', { name: 'Run 2 cases', exact: true })).toBeEnabled();
   await Promise.all(responses);
   expect(snapshots).toHaveLength(2);
   expect(snapshots[0].id).not.toBe(snapshots[1].id);

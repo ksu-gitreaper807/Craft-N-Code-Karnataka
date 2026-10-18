@@ -27,7 +27,7 @@ function snapshotProgram(scene) {
     (el.type !== 'text' || (typeof el.text === 'string' && Number.isFinite(el.fontSize) && el.fontSize > 0)));
   if (!validElements || new Set(scene.elements.map((el) => el.id)).size !== scene.elements.length) throw invalid('The board contains invalid elements.');
   const frameId = scene.verifier?.frameId;
-  if (!validLanguage(scene.verifier?.language)) throw invalid('Choose C or Python.');
+  if (!validLanguage(scene.verifier?.language)) throw invalid('Choose C++ or Python.');
   const language = scene.verifier?.language ?? 'c';
   if (!scene.elements.some((el) => el.id === frameId && el.type === 'frame' && !el.isDeleted)) throw invalid('Select a program frame before saving a snapshot.');
   const channels = handwritingChannels(scene.elements, frameId);

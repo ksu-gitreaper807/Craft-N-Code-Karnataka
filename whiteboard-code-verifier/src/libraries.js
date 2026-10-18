@@ -12,3 +12,22 @@ export const libraries = [
     description: 'O(log n) searches on an ascending sorted integer array. binary_search returns the first matching index or -1; bounds return insertion positions.',
     methods: 'binary_search · lower_bound · upper_bound' },
 ];
+
+// STL entries are examples, not vendored headers or archive dependencies.
+export const standardLibraries = [
+  { file: 'vector', title: 'STL vector & sorting', lessonId: 'cpp-vector',
+    description: 'Dynamic contiguous storage. push_back is amortized O(1); sort is O(n log n). Use at() for checked access.',
+    methods: 'std::vector · push_back · size · at · begin/end · std::sort' },
+  { file: 'list', title: 'STL linked list', lessonId: 'cpp-list',
+    description: 'Doubly linked sequence. Insertion/erasure at a known position is O(1); finding that position is O(n).',
+    methods: 'std::list · push_front · push_back · front · pop_front · erase · empty' },
+  { file: 'queue', title: 'STL queue', lessonId: 'cpp-queue',
+    description: 'FIFO adaptor. Push, front and pop are O(1). Check empty() before front() or pop(); pop() returns no value.',
+    methods: 'std::queue · push · front · back · pop · size · empty' },
+  { file: 'stack', title: 'STL stack', lessonId: 'cpp-stack',
+    description: 'LIFO adaptor. Push, top and pop are O(1). Check empty() before top() or pop(); pop() returns no value.',
+    methods: 'std::stack · push · top · pop · size · empty' },
+  { file: 'algorithm', title: 'STL binary search', lessonId: 'cpp-search',
+    description: 'Requires a sorted range. Vector searches take O(log n) comparisons; lower/upper_bound return iterators, not indexes.',
+    methods: 'std::binary_search · std::lower_bound · std::upper_bound' },
+];

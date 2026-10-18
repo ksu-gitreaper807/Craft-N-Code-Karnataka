@@ -11,7 +11,7 @@ import SnippetBuilder from './SnippetBuilder.jsx';
 import DrawToolbar from './DrawToolbar.jsx';
 import { composeSource, loadTemplate, saveTemplate } from './template.js';
 import { lessons } from './lessons.js';
-import { libraries } from './libraries.js';
+import { libraries, standardLibraries } from './libraries.js';
 import { CODE_MODES, PYTHON_CODE_MODES } from './pseudocode.js';
 import { LANGUAGES, languageInfo, languagePayload, validLanguage } from './languages.js';
 import FrameControls from './FrameControls.jsx';
@@ -25,6 +25,7 @@ import queueHeader from '../runner/lib/queue.h?raw';
 import searchHeader from '../runner/lib/search.h?raw';
 import './styles.css';
 
+const libraryCatalog = [...libraries, ...standardLibraries];
 const bundledHeaders = { 'stack.h': stackHeader, 'linked_list.h': listHeader, 'queue.h': queueHeader, 'search.h': searchHeader };
 
 const labels = {
@@ -150,7 +151,7 @@ function App() {
   const shownDiagnostics = result && !stale && !result.transformed ? result.diagnostics : [];
   const lesson = lessons.find((item) => item.id === lessonId);
   const selectedFrame = frames.find((frame) => frame.id === frameId);
-  const library = libraries.find((item) => item.file === libraryFile);
+  const library = libraryCatalog.find((item) => item.file === libraryFile);
   const refreshCanvas = useCallback(() => api?.refresh(), [api]);
   const busy = running || reading;
   const lineCount = runSource ? runSource.split('\n').length : 0;
@@ -444,7 +445,7 @@ function App() {
 
   function restoreBoard(data) {
     if (data.type !== 'excalidraw' || !Array.isArray(data.elements) || data.elements.length > 2000) throw new Error('Choose an Excalidraw scene with at most 2,000 elements.');
-    if (!validLanguage(data.verifier?.language)) throw new Error('Choose a board using C or Python.');
+    if (!validLanguage(data.verifier?.language)) throw new Error('Choose a board using C++ or Python.');
     setLanguage(data.verifier?.language ?? 'c');
     const restored = restoreElements(data.elements.filter((el) => !isOverlay(el)), null);
     const nextFrames = framesIn(restored);
@@ -476,6 +477,11 @@ function App() {
     setTab('library');
     setLibraryFile(file);
     if (librarySources[file]) return;
+    const standard = standardLibraries.find(item => item.file === file);
+    if (standard) {
+      setLibrarySources(previous => ({ ...previous, [file]: lessons.find(item => item.id === standard.lessonId).source }));
+      return;
+    }
     if (bundledHeaders[file]) {
       setLibrarySources((previous) => ({ ...previous, [file]: bundledHeaders[file] }));
       return;
@@ -805,7 +811,7 @@ function App() {
                   setNotice('Transcription confirmed. Use the run button at your selected level to check, complete, or demonstrate it.');
                 }}
               /></div>
-              <div hidden={tab !== 'cases'}>{pseudoLevel === 3 && <p className="panel-help">First correct or generate code with the run button. Cases use that displayed program until the board or level changes.</p>}<TestCases program={caseProgram} signature={`${signature}:${pseudoLevel}:${caseProgram.source}`}
+              <div hidden={tab !== 'cases'}>{pseudoLevel === 3 && <p className="panel-help">First correct or generate code with the run button. Cases use that displayed program until the board or level changes.</p>}<TestCases key={language} program={caseProgram} signature={`${signature}:${pseudoLevel}:${caseProgram.source}`}
                 captureScene={boardScene} onCompiled={(scene, submitted, data) => saveCompilationSnapshot(scene,
                   { source: submitted.source, stdin: submitted.stdin, language: submitted.language, level: pseudoLevel, kind: 'case', result: data })}
                 disabled={running || reading || !health?.available || !api || !frameId || !caseProgram.source.trim() || (pseudoLevel === 3 && !currentDraft)} onBusy={setRunning} /></div>
@@ -817,7 +823,7 @@ function App() {
               }} />}
               {tab === 'output' && <>
                 {stale && <div className="stale-notice">{edited !== null ? 'The code changed. Run again to update these results.' : 'The board changed. Run again to update these results.'}</div>}
-                {!result && !running && <div className="empty-state"><div className="terminal-glyph">&gt;_</div><h3>Let the code do the talking.</h3><p>Output appears here. Errors are underlined in the code above.</p><span>{language === 'python' ? 'Python interpreter' : 'C compiler'} · real output</span></div>}
+                {!result && !running && <div className="empty-state"><div className="terminal-glyph">&gt;_</div><h3>Let the code do the talking.</h3><p>Output appears here. Errors are underlined in the code above.</p><span>{language === 'python' ? 'Python interpreter' : 'C++ compiler'} · real output</span></div>}
                 {running && <div className="empty-state" role="status"><div className="terminal-glyph">…</div><h3>{phase === 'gemini' ? 'Preparing the lesson with Gemini' : 'Testing the lesson'}</h3><p>{phase === 'gemini' ? `Reading your selected code or algorithm and preparing ${languageLabel}.` : `Checking ${languageLabel} and running the program.`}</p></div>}
                 {result && <div aria-live="polite"><div className={`result-status ${result.status === 'success' ? 'passed' : 'failed'}`}><span>{result.status === 'success' ? '✓' : '!'}</span><strong>{labels[result.status] ?? result.status}</strong><small>{result.durationMs} ms</small></div>
                   {result.status !== 'success' && !stale && <div className="fix-callout">
@@ -844,11 +850,11 @@ function App() {
                 </section>}
               </>}
               {tab === 'library' && <div className="library-panel">
-                <label className="field-label" htmlFor="library-select">CURATED C LIBRARIES</label>
-                <select id="library-select" className="frame-select" value={libraryFile} onChange={(event) => viewLibrary(event.target.value)}>{libraries.map((item) => <option key={item.file} value={item.file}>{item.title} · {item.file}</option>)}</select>
+                <label className="field-label" htmlFor="library-select">C++ LIBRARIES</label>
+                <select id="library-select" className="frame-select" value={libraryFile} onChange={(event) => viewLibrary(event.target.value)}>{libraryCatalog.map((item) => <option key={item.file} value={item.file}>{item.title} · {item.file}</option>)}</select>
                 <h3>{library.title}</h3><p className="panel-help">{library.description}</p>
                 <p className="library-methods">{library.methods}</p>
-                <p className="panel-help">Include with <code>#include &lt;{libraryFile}&gt;</code>. These are project-provided teaching headers compiled by the runner.</p>
+                <p className="panel-help">Include with <code>#include &lt;{libraryFile}&gt;</code>. {standardLibraries.includes(library) ? 'Built into the C++ toolchain. The code below is a runnable usage example.' : 'This is a project-provided teaching header compiled by the runner.'}</p>
                 <button className="quiet-button" disabled={running || reading || !api} onClick={() => { chooseLesson(library.lessonId); setTab('output'); }}>Load example on board</button>
                 <pre className="library-source">{librarySources[libraryFile] || `Loading ${libraryFile}…`}</pre>
               </div>}

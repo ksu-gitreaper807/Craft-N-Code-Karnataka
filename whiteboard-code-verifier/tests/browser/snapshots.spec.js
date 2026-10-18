@@ -51,8 +51,8 @@ test('saves literal lesson files with real Git history and reopens the saved boa
   const saved = await response.json();
   expect(saved.commit).toMatch(/^[a-f0-9]{40,64}$/);
   expect(saved.id).toMatch(/^\d{4}-\d{2}-\d{2}\//);
-  expect((await readdir(join(archive, saved.id))).sort()).toEqual(['.dockerignore', 'Dockerfile', 'board.c', 'board.excalidraw', 'build.sh', 'input.txt', 'lib.lock', 'replay.py', 'runner.py']);
-  expect(await readFile(join(archive, saved.id, 'board.c'), 'utf8')).toBe(source);
+  expect((await readdir(join(archive, saved.id))).sort()).toEqual(['.dockerignore', 'Dockerfile', 'board.cpp', 'board.excalidraw', 'build.sh', 'input.txt', 'lib.lock', 'replay.py', 'runner.py']);
+  expect(await readFile(join(archive, saved.id, 'board.cpp'), 'utf8')).toBe(source);
   expect(await readFile(join(archive, saved.id, 'input.txt'), 'utf8')).toBe('3 5\n\n');
   const scene = JSON.parse(await readFile(join(archive, saved.id, 'board.excalidraw'), 'utf8'));
   expect(scene.elements.some((element) => element.text === source)).toBe(true);
@@ -109,7 +109,7 @@ test('blocks unconfirmed or changed ink and saves teacher-corrected C without re
   const response = await responsePromise;
   expect(response.status()).toBe(201);
   const saved = await response.json();
-  expect(await readFile(join(archive, saved.id, 'board.c'), 'utf8')).toBe('int main(void) {\n    return 0;\n}');
+  expect(await readFile(join(archive, saved.id, 'board.cpp'), 'utf8')).toBe('int main(void) {\n    return 0;\n}');
   expect(await readFile(join(archive, saved.id, 'input.txt'), 'utf8')).toBe('');
   const scene = JSON.parse(await readFile(join(archive, saved.id, 'board.excalidraw'), 'utf8'));
   expect(scene.elements.some((element) => element.type === 'freedraw')).toBe(true);

@@ -9,7 +9,7 @@ In the Vercel project, set the root directory to `whiteboard-code-verifier` and 
 | `BOARDROOM_API_TOKEN` | A private random value generated with `openssl rand -hex 32`. Share it only with trusted teachers. |
 | `GEMINI_API_KEY` | Your Google AI Studio key for handwriting recognition. |
 | `WANDBOX_API_URL` | `https://wandbox.org/api` for Wandbox's public API. |
-| `WANDBOX_C_COMPILER` | Optional compiler name; defaults to `gcc-head-c`. |
+| `WANDBOX_CPP_COMPILER` | Optional compiler name; defaults to `gcc-head`. |
 | `WANDBOX_PYTHON_COMPILER` | Optional Python runtime; defaults to `cpython-3.13.8`. |
 | `OCR_MODEL` | Optional Gemini model override. |
 | `SNAPSHOT_GITHUB_REPOSITORY` | Archive repository, e.g. `ksu-gitreaper807/Craft-N-Code-Karnataka`. |
@@ -22,7 +22,7 @@ Remove any old `VITE_BOARDROOM_API_ORIGIN` setting so the browser calls the same
 
 Vercel stores lesson snapshots directly through GitHub's Git Data API; it needs neither local Git nor a persistent disk. Configure the three snapshot variables above in **Production**, then redeploy. Create the token under GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens; select only the archive repository, grant Contents read/write, and choose an expiry. Store it only in Vercel's server environment. Preview deployments need their own explicitly configured archive variables if they should save lessons.
 
-The repository must have an initial commit (a README is sufficient). The archive branch is created from its default branch on the first save. Each snapshot adds `YYYY-MM-DD/HH-MM-SS-title-id/` with `board.excalidraw`, `board.c` or `board.py`, `input.txt`, and the portable replay bundle. A single branch update publishes every file together. Concurrent saves retry on the newest commit; updates never force-push. The application default branch is not updated by snapshot saves. Reopening and comparing headers read committed data from GitHub, so history survives function restarts and redeploys. History shows up to 30 lessons from the latest 300 commits, including older local archive commits that were pushed to this branch.
+The repository must have an initial commit (a README is sufficient). The archive branch is created from its default branch on the first save. Each snapshot adds `YYYY-MM-DD/HH-MM-SS-title-id/` with `board.excalidraw`, `board.cpp` or `board.py`, `input.txt`, and the portable replay bundle. A single branch update publishes every file together. Concurrent saves retry on the newest commit; updates never force-push. The application default branch is not updated by snapshot saves. Reopening and comparing headers read committed data from GitHub, so history survives function restarts and redeploys. History shows up to 30 lessons from the latest 300 commits, including older local archive commits that were pushed to this branch.
 
 Snapshots have the same visibility as the repository: lessons on a public fork are public. All teachers using the same classroom API token share this archive. If GitHub access fails, the save reports an error and the current canvas remains available for download. After a timeout, refresh History before saving again, because GitHub may already have accepted the commit. Missing configuration is shown in History; expired tokens, permissions, branch rules, and rate limits produce actionable errors. Rotate the archive token before its expiry. Existing local disk snapshots continue to use the separate Git archive and its configured remote; they are not uploaded automatically by the hosted store.
 

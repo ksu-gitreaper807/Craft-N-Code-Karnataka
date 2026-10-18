@@ -18,7 +18,7 @@ const schema = {
 };
 
 export function validatePseudocode(body) {
-  if (!validLanguage(body?.language)) throw fail('Choose C or Python.');
+  if (!validLanguage(body?.language)) throw fail('Choose C++ or Python.');
   if (!body || ![1, 2, 3].includes(body.level)) throw fail('Choose a pseudocode level from 1 to 3.');
   if (typeof body.source !== 'string' || !body.source.trim() || Buffer.byteLength(body.source) > 32_768 || body.source.includes('\0')) {
     throw fail('Provide code or an algorithm of at most 32 KiB without NUL characters.');
@@ -51,15 +51,15 @@ export function pseudocodePrompt(level, headers = '', language = 'c') {
     2: 'Complete a near-Python teaching snippet, correcting missing colons, indentation, imports and incomplete syntax while preserving its intended algorithm. Explain each change. Python needs neither C headers nor main nor semicolons.',
     3: 'Translate the teacher algorithm or plain-language steps into a short readable Python 3 demonstration. Use supplied stdin for requested input. Choose small deterministic data when unspecified and explain assumptions.',
   }[level] : {
-    1: 'Review the C source as written. Identify syntax and likely runtime errors, explain each correction, and return a minimally corrected complete C program. Keep the intended algorithm. The original code is compiled separately; your source is advice only.',
-    2: 'Complete a near-C teaching snippet. Add missing main, standard includes, declarations and semicolons, and minimally correct syntax while preserving its algorithm and output intent. Explain each change. Do not replace the intended algorithm.',
-    3: 'Translate the teacher algorithm or plain-language steps into a small, readable, complete C demonstration. Keep the stated algorithm. For unspecified data, choose a small deterministic example and explain the assumption. Use supplied stdin when the algorithm calls for input.',
+    1: 'Review the C++17 source as written. Identify syntax and likely runtime errors, explain each correction, and return a minimally corrected complete C++17 program. Keep the intended algorithm. The original code is compiled separately; your source is advice only.',
+    2: 'Complete a near-C++ teaching snippet. Add missing main, standard includes, declarations and semicolons, and minimally correct syntax while preserving its algorithm and output intent. Explain each change. Do not replace the intended algorithm.',
+    3: 'Translate the teacher algorithm or plain-language steps into a small, readable, complete C++17 demonstration. Keep the stated algorithm. For unspecified data, choose a small deterministic example and explain the assumption. Use supplied stdin when the algorithm calls for input.',
   }[level];
-  const target = language === 'python' ? 'Python 3' : 'C11';
+  const target = language === 'python' ? 'Python 3' : 'C++17';
   const restrictions = language === 'python' ? 'Use Python 3 and its standard library only, including collections, heapq, bisect or math where useful. Preserve Python indentation. Do not generate C, main(), or C headers.' : `
-Use only these standard headers: stdio.h, stdlib.h, string.h, math.h, stdbool.h, stdint.h, stddef.h, limits.h, float.h, ctype.h, assert.h, errno.h, inttypes.h, unistd.h.
-Use #include <header.h> angle brackets for every include, including project headers; quoted and file-path includes are rejected by the local runner.
-Prefer standard C. Only use a project teaching header when the teacher names it. The exact requested header contents follow; use these public signatures and ownership rules without inventing APIs:
+Use standard C++ headers iostream, vector, algorithm, queue, stack, list, deque, map, set, unordered_map, unordered_set, string, array, utility, tuple, numeric, functional, limits, cmath, cstdio, cstdlib, cstring, cassert, cstdint, cstddef, memory, iterator, iomanip, sstream, bitset and optional; or these C-compatible headers: stdio.h, stdlib.h, string.h, math.h, stdbool.h, stdint.h, stddef.h, limits.h, float.h, ctype.h, assert.h, errno.h, inttypes.h, unistd.h.
+Use #include <header> angle brackets for every include, including project headers; quoted and file-path includes are rejected by the local runner.
+Prefer standard C++17. Preserve existing C-style code when valid C++; use explicit pointer casts for malloc/realloc or appropriate STL containers. Only use a project teaching header when the teacher names it. The exact requested header contents follow; use these public signatures and ownership rules without inventing APIs:
 ${headers || '(No project headers requested.)'}
 `;
   return `You assist a teacher demonstrating ${target}. ${task}

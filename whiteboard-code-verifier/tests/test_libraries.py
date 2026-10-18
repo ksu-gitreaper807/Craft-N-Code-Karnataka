@@ -9,7 +9,7 @@ from test_runner import execute_fixture, runner
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@unittest.skipUnless(shutil.which("gcc"), "GCC is required")
+@unittest.skipUnless(shutil.which("g++"), "GCC is required")
 class LibraryTests(unittest.TestCase):
     def test_operations_boundaries_wraparound_growth_and_cleanup(self):
         source = (ROOT / "tests/fixtures/library_checks.c").read_text()
@@ -39,6 +39,11 @@ class LibraryTests(unittest.TestCase):
                 self.assertEqual(result["diagnostics"][0]["line"], 3, result)
                 self.assertEqual(result["diagnostics"][0]["kind"], "contract", result)
                 self.assertIn(message, result["diagnostics"][0]["message"])
+
+    def test_teaching_search_and_stl_algorithms_can_be_included_together(self):
+        source = '#include <search.h>\n#include <algorithm>\n#include <vector>\nint main() { int a[]{1,2,3}; std::vector<int> v{1,2,3}; return binary_search(a,3,2)!=1 || !std::binary_search(v.begin(),v.end(),2); }'
+        result = execute_fixture({'source': source})
+        self.assertEqual(result['status'], 'success', result)
 
     def test_only_public_library_headers_are_allowed(self):
         for header in ["linked_list.h", "queue.h", "search.h"]:

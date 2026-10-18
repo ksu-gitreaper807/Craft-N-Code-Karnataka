@@ -30,7 +30,7 @@ test('right-panel language toggle runs actual Python and maps syntax and runtime
   await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
   await expect(page.locator('.diagnostic').first()).toContainText('ZeroDivisionError');
   await expect(page.locator('.diagnostic').first()).toContainText('L3');
-  await page.getByRole('radio', { name: 'C', exact: true }).check();
+  await page.getByRole('radio', { name: 'C++', exact: true }).check();
   await expect(page.locator('.stale-notice')).toBeVisible();
 });
 
@@ -54,8 +54,8 @@ test('Python cases run the selected language and download/import restores that l
   const data = JSON.parse(await readFile(path, 'utf8'));
   expect(data.verifier.language).toBe('python');
   await page.getByLabel('Demo lesson').selectOption('sum');
-  await expect(page.getByRole('radio', { name: 'C', exact: true })).toBeChecked();
-  await page.locator('input[type=file]').setInputFiles(path);
+  await expect(page.getByRole('radio', { name: 'C++', exact: true })).toBeChecked();
+  await page.locator('input[type=file][accept=".excalidraw,.json"]').setInputFiles(path);
   await expect(page.getByRole('radio', { name: 'Python', exact: true })).toBeChecked();
   await openPanel(page);
   await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(program);
@@ -105,7 +105,7 @@ test('Python OCR keeps indentation, requires confirmation and invalidates it on 
   await page.getByRole('button', { name: 'Use confirmed code', exact: true }).click();
   await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
   await expect(page.locator('.terminal pre')).toHaveText('0\n1\n');
-  await expect(page.getByRole('radio', { name: 'C', exact: true })).toBeEnabled();
-  await page.getByRole('radio', { name: 'C', exact: true }).check();
+  await expect(page.getByRole('radio', { name: 'C++', exact: true })).toBeEnabled();
+  await page.getByRole('radio', { name: 'C++', exact: true }).check();
   await expect(page.getByRole('button', { name: 'Read & review handwriting', exact: true })).toBeEnabled();
 });

@@ -28,7 +28,7 @@ static inline void stack_push_(Stack *s, int value, int line) {
             stack_contract("capacity exceeds addressable storage", line);
         }
         size_t next = s->cap ? s->cap * 2 : 4;
-        int *data = realloc(s->data, next * sizeof *data);
+        int *data = (int *)realloc(s->data, next * sizeof *data);
         if (!data) stack_contract("allocation failed", line);
         fprintf(stderr, "[stack] grow %zu -> %zu ints\n", s->cap, next);
         s->data = data;

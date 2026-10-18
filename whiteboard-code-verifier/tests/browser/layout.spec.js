@@ -40,7 +40,8 @@ test('keeps the board clean, opens the code panel on demand, and resizes it with
   await page.getByRole('button', { name: 'Show panel', exact: true }).click();
   await expect(page.getByRole('complementary')).toBeVisible();
   const withPanel = await canvas.boundingBox();
-  expect(withPanel.height).toBe(before.height);
+  // Toolbar text and font rounding can shift its border by a couple of pixels.
+  expect(Math.abs(withPanel.height - before.height)).toBeLessThanOrEqual(4);
   expect(withPanel.width).toBeLessThan(before.width - 300);
   const divider = page.getByRole('separator', { name: 'Resize code and results panel' });
   const handle = await divider.boundingBox();
@@ -133,7 +134,7 @@ test('browses curated headers and loads their examples onto the board', async ({
   await openPanel(page);
   await page.getByRole('tab', { name: 'Libraries', exact: true }).click();
   for (const library of libraries) {
-    await page.getByLabel('CURATED C LIBRARIES').selectOption(library.file);
+    await page.getByLabel('C++ LIBRARIES').selectOption(library.file);
     await expect(page.locator('.library-source')).toContainText('#ifndef');
     await expect(page.locator('.library-panel h3')).toHaveText(library.title);
     const expected = await readFile(new URL(`../../runner/lib/${library.file}`, import.meta.url), 'utf8');

@@ -37,7 +37,7 @@ async function requestBody(req, limit = 65_536) {
 }
 
 export function validatePayload(body) {
-  if (!validLanguage(body?.language)) return 'Choose C or Python.';
+  if (!validLanguage(body?.language)) return 'Choose C++ or Python.';
   if (!body || typeof body.source !== 'string' || !body.source.trim()) return 'Write some code before running.';
   if (Buffer.byteLength(body.source) > 32_768 || body.source.includes('\0')) return 'Source must be at most 32 KiB without NUL characters.';
   if (body.stdin !== undefined && (typeof body.stdin !== 'string' || Buffer.byteLength(body.stdin) > 8192 || body.stdin.includes('\0'))) {
@@ -109,7 +109,7 @@ export function createHandler({ run = defaultRun, health = defaultHealth, now = 
     try {
       if (pathname === '/api/health' && req.method === 'GET') {
         const language = new URL(req.url, 'http://localhost').searchParams.get('language') ?? 'c';
-        if (!validLanguage(language)) return send(res, 400, { error: 'Choose C or Python.' });
+        if (!validLanguage(language)) return send(res, 400, { error: 'Choose C++ or Python.' });
         return send(res, 200, { service: 'whiteboard-code-verifier', runner: await health(language), ocr: ocrHealth() });
       }
       if (pathname === '/api/snapshots/sync' && req.method === 'GET') return send(res, 200, await snapshots.syncStatus());

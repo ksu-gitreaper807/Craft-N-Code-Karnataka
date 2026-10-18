@@ -34,7 +34,7 @@ export default function SnippetBuilder({ open, template, snippet, enabled, onApp
   const remove = (zone, index) => setDraft((previous) => ({ ...previous, [zone]: previous[zone].filter((_, at) => at !== index) }));
   const addCustom = (zone) => {
     if (!validCustomLine(zone, custom[zone])) {
-      setMessage(zone === 'headers' ? 'Use the form #include <name.h>.' : 'Enter a line of C, at most 600 characters.');
+      setMessage(zone === 'headers' ? 'Use the form #include <vector> or #include <name.h>.' : 'Enter a line of C++, at most 600 characters.');
       return;
     }
     add(zone, custom[zone].trim());

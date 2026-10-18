@@ -32,7 +32,7 @@ test('loads the canvas, edits code and input, and roundtrips a downloaded board'
   expect(scene.elements.some((el) => el.type === 'frame')).toBe(true);
   await page.getByLabel('Demo lesson').selectOption('stack');
   await expect(source).toHaveValue(lessons[2].source);
-  await page.locator('input[type=file]').setInputFiles(path);
+  await page.locator('input[type=file][accept=".excalidraw,.json"]').setInputFiles(path);
   await expect(source).toHaveValue(lessons[0].source);
   await expect(page.getByLabel('STANDARD INPUT · BLUE INK')).toHaveValue('4 6\n');
   expect(errors).toEqual([]);

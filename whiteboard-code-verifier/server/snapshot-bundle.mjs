@@ -44,7 +44,8 @@ export async function snapshotBundle(scene, program) {
     // Browser-supplied historical evidence, never accepted as a new verification.
     files.set('result.json', JSON.stringify({ provenance: 'browser-reported', result }) + '\n');
   }
-  return { files, manifest: (allFiles) => JSON.stringify({ version: 1, compilerImage: IMAGE, language: program.language ?? 'c',
+  return { files, manifest: (allFiles) => JSON.stringify({ version: 1, compilerImage: IMAGE, language: program.language ?? 'c', sourceFile: program.language === 'python' ? 'board.py' : 'board.cpp',
+    compiler: program.language === 'python' ? 'python3' : 'g++', standard: program.language === 'python' ? null : 'c++17',
     files: Object.fromEntries([...allFiles].sort(([a], [b]) => a.localeCompare(b)).map(([name, bytes]) => [name, hash(bytes)])),
   }, null, 2) + '\n' };
 }

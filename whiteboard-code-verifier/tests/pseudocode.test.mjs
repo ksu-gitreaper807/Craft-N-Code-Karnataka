@@ -51,7 +51,7 @@ test('named teaching libraries include their actual APIs and require angle-brack
     },
   });
   assert.match(instruction, /queue_init\(Queue \*queue\)/);
-  assert.match(instruction, /#include <header.h>/);
+  assert.match(instruction, /#include <header>/);
   assert.ok(!instruction.includes('BOARD_LIST_H'));
 });
 
@@ -97,5 +97,5 @@ test('Python assistance targets Python at each level and never reads C headers',
     assert.equal(result.language, 'python');
     assert.equal(result.source, 'print(5)\n');
   }
-  assert.throws(() => validatePseudocode({ source: 'x', level: 1, language: 'javascript' }), /C or Python/);
+  assert.throws(() => validatePseudocode({ source: 'x', level: 1, language: 'javascript' }), /C\+\+ or Python/);
 });

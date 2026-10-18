@@ -1,6 +1,6 @@
 # Boardroom — Whiteboard Code Verifier
 
-An executable whiteboard for teachers explaining C and Python. Handwrite or type code in an Excalidraw frame, supply input in blue, and run reviewed code through GCC or Python 3. Compiler and sanitizer diagnostics link back to the board instead of interrupting the lesson with a separate IDE.
+An executable whiteboard for teachers explaining C++ and Python. Handwrite or type code in an Excalidraw frame, supply input in blue, and run reviewed code through g++ or Python 3. Compiler and sanitizer diagnostics link back to the board instead of interrupting the lesson with a separate IDE.
 
 The application is self-contained in `whiteboard-code-verifier/`; hackathon submission materials are maintained separately.
 
@@ -108,7 +108,7 @@ The board keeps the teacher's writing. For typed source, **Use this C on board**
 
 ## Multiple input cases
 
-Open **Cases** to add up to five named inputs for the selected board program. Each case can expect success, a compiler error, a runtime issue, a timeout, or an output limit; optionally compare stdout exactly. **Run cases** compiles/runs each input using the configured execution service and marks mismatches. At Levels 2–3, first generate/correct C with the main run button; Cases uses that displayed C. Changing the board or level marks earlier case results stale. Case definitions live in the current browser session and do not alter the blue input or become part of a lesson snapshot.
+Open **Cases** to add up to 20 named cases. Expect success, compiler/runtime errors, timeouts, or output limits. Stdout comparison defaults to exact characters (including newlines); choose trimming or whitespace normalization explicitly. Results show expected/actual output, the first difference, duration, stderr, and compiler diagnostics, with progress as each case finishes. **Stop cases** prevents remaining submissions and cancels the browser wait; a submitted server job may still finish. Suites persist in browser storage separately for C++ and Python. **Import suite** validates a versioned JSON file before replacing definitions; **Export suite** downloads a portable copy. Each completed response still creates its full-board snapshot; suite definitions themselves are not bundled.
 
 ## Try a lesson
 
@@ -134,13 +134,13 @@ snapshots/                         # separate local Git repository, created on f
   2026-10-17/                      # UTC date
     12-30-05-input-output-a1b2c3d4/ # UTC time, lesson title, unique suffix
       board.excalidraw
-      board.c
+      board.cpp
       input.txt
 ```
 
-Every click creates a new folder; existing snapshots are not overwritten. `board.excalidraw` retains the full canvas and selected-frame metadata. `board.c` contains the selected frame's exact typed or confirmed source, and `input.txt` preserves literal input, including blank lines. All snapshot files are recorded together with a `board: <lesson title>` Git commit. This archive is separate from the application repository and has no remote configured automatically.
+Every click creates a new folder; existing snapshots are not overwritten. `board.excalidraw` retains the full canvas and selected-frame metadata. `board.cpp` contains the selected frame's exact typed or confirmed source, and `input.txt` preserves literal input, including blank lines. All snapshot files are recorded together with a `board: <lesson title>` Git commit. This archive is separate from the application repository and has no remote configured automatically.
 
-The **History** tab lists the latest 30 snapshot commits. **Open saved board** restores the committed scene; save current work first because opening replaces the canvas. Saved execution results are not trusted on opening, and handwritten code requires fresh review before running or snapshotting again. The previously confirmed source remains available in the snapshot's `board.c` or `board.py`.
+The **History** tab lists the latest 30 snapshot commits. **Open saved board** restores the committed scene; save current work first because opening replaces the canvas. Saved execution results are not trusted on opening, and handwritten code requires fresh review before running or snapshotting again. The previously confirmed source remains available in the snapshot's `board.cpp` or `board.py`.
 
 From the app root, inspect the archive with:
 
@@ -252,3 +252,12 @@ This implementation was generated with OpenAI Codex from `../whiteboard-code-ver
 - The Gemini OCR call is not routed through Caveman; gateway credentials/configuration have not been provided.
 
 Keep changes focused; use two-space JavaScript/JSX indentation and four-space C/Python indentation. Run the focused test suite before contributing. Dependencies are pinned in `package.json` and `package-lock.json`; use `npm ci` for reproducible installation and update the lockfile when changing dependencies.
+
+
+## C++ compiler and compatibility
+
+The C-family toggle now selects **C++17**, compiled by `g++` from `board.cpp`; Python is unchanged. The existing internal language ID `c` is retained so saved boards and clients still open. New snapshots record `board.cpp`, compiler `g++`, and standard `c++17`; historical `.c` snapshots keep their frozen runner and replay assets. Existing C examples may need C++ changes, such as explicit `malloc`/`realloc` casts. The bundled teaching headers and memory lesson have been adjusted; the runner never silently repairs submitted source.
+
+Rebuild the local image with `npm run runner:build`. Hosted execution uses Wandbox's C++ compiler `gcc-head`, with `-std=c++17`; override it with `WANDBOX_CPP_COMPILER` (the previous `WANDBOX_C_COMPILER` setting is no longer used). The Libraries tab retains project teaching headers and adds runnable STL vector/sort, linked-list, queue, stack, and binary-search examples. Standard library headers are provided by the toolchain, not copied into snapshots.
+
+To roll back the application, deploy its previous commit and rebuild the local runner image from that version. Existing archived bundles retain their own source, compiler runner, headers, and replay script; do not rewrite them during a rollback. New C++ programs require the C++ runner when rerun in the application.

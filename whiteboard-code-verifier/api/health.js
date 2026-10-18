@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
   if (!authorize(req, res)) return;
   const language = new URL(req.url ?? '/', 'https://localhost').searchParams.get('language') ?? 'c';
-  if (!validLanguage(language)) return sendJson(res, 400, { error: 'Choose C or Python.' });
+  if (!validLanguage(language)) return sendJson(res, 400, { error: 'Choose C++ or Python.' });
   sendJson(res, 200, {
     service: 'whiteboard-code-verifier',
     runner: await hostedRunnerHealth({ language }),

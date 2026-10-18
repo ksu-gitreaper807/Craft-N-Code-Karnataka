@@ -25,7 +25,7 @@ def verify():
     language = manifest.get("language", "c")
     if language not in ("c", "python"):
         raise ValueError("Unsupported snapshot language.")
-    source_file = "board.py" if language == "python" else "board.c"
+    source_file = "board.py" if language == "python" else ("board.cpp" if "board.cpp" in manifest["files"] else "board.c")
     for name in [source_file, "input.txt", "runner.py", "Dockerfile", "build.sh", "replay.py"]:
         if name not in manifest["files"]:
             raise ValueError(f"Manifest is missing {name}.")
@@ -46,7 +46,7 @@ def main():
     image = "boardroom-snapshot:" + hashlib.sha256((ROOT / "lib.lock").read_bytes()).hexdigest()[:24]
     subprocess.run(["docker", "build", "--network=none", "-t", image, "."], cwd=ROOT, stdout=sys.stderr, check=True, timeout=180)
     language = manifest.get("language", "c")
-    source_file = "board.py" if language == "python" else "board.c"
+    source_file = "board.py" if language == "python" else ("board.cpp" if "board.cpp" in manifest["files"] else "board.c")
     payload = json.dumps({"language": language, "source": (ROOT / source_file).read_bytes().decode("utf-8"),
                           "stdin": (ROOT / "input.txt").read_bytes().decode("utf-8")}, ensure_ascii=False)
     try:

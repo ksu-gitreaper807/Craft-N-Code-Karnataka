@@ -37,8 +37,23 @@ static inline ptrdiff_t binary_search_(const int *values, size_t length, int tar
     return index < length && values[index] == target ? (ptrdiff_t)index : -1;
 }
 
+#ifdef __cplusplus
+// Functions avoid collisions with std::lower_bound and std::binary_search.
+// GCC evaluates this default argument at the caller, preserving teaching lines.
+static inline size_t lower_bound(const int *values, size_t length, int target, int line = __builtin_LINE()) {
+    return lower_bound_(values, length, target, line);
+}
+static inline size_t upper_bound(const int *values, size_t length, int target, int line = __builtin_LINE()) {
+    return upper_bound_(values, length, target, line);
+}
+static inline ptrdiff_t binary_search(const int *values, size_t length, int target, int line = __builtin_LINE()) {
+    return binary_search_(values, length, target, line);
+}
+#else
 #define lower_bound(values, length, target) lower_bound_((values), (length), (target), __LINE__)
 #define upper_bound(values, length, target) upper_bound_((values), (length), (target), __LINE__)
 #define binary_search(values, length, target) binary_search_((values), (length), (target), __LINE__)
+
+#endif
 
 #endif

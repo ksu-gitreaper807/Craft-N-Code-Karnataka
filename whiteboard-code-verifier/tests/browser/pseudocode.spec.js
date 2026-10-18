@@ -56,7 +56,7 @@ test('Algorithm mode asks Gemini, runs the generated code, and keeps the board a
   await mode(page, 3);
   expect(calls).toHaveLength(0);
   await page.getByRole('button', { name: 'Generate & run', exact: true }).click();
-  await expect(page.getByLabel('Generated C', { exact: true })).toHaveText(corrected);
+  await expect(page.getByLabel('Generated C++', { exact: true })).toHaveText(corrected);
   await expect(page.locator('.terminal pre')).toHaveText('5\n');
   expect(calls).toHaveLength(1);
   expect(calls[0]).toMatchObject({ source: original, level: 3 });
@@ -90,7 +90,7 @@ for (const number of [1, 2, 3]) {
     const fix = page.getByRole('button', { name: 'Ask Gemini to fix' });
     await expect(fix).toBeEnabled();
     await fix.click();
-    await expect(page.getByLabel('Fixed C', { exact: true })).toHaveText(corrected);
+    await expect(page.getByLabel('Fixed C++', { exact: true })).toHaveText(corrected);
     await expect(page.locator('.terminal pre')).toHaveText('5\n');
     const fixCall = calls.at(-1);
     expect(fixCall.level).toBe(1);
@@ -183,7 +183,7 @@ test('a handwritten algorithm requires confirmation before Gemini generates and 
   expect(assists).toBe(0);
   await page.getByRole('button', { name: 'Generate & run', exact: true }).click();
   await expect(page.locator('.terminal pre')).toHaveText('5\n');
-  await expect(page.getByLabel('Generated C', { exact: true })).toHaveText(corrected);
+  await expect(page.getByLabel('Generated C++', { exact: true })).toHaveText(corrected);
   await expect(page.getByRole('button', { name: 'Use this C on board', exact: true })).toHaveCount(0);
   expect(assists).toBe(1);
   expect(runs).toBe(1);
