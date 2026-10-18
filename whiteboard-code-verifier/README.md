@@ -24,10 +24,11 @@ See the [technical stack and project overview](docs/technical-overview.md) for t
 
 ## Layout and tools
 
-- **Board first.** The whiteboard fills the window. Excalidraw's own menus, tool bar and style panel stay hidden until you click **Code** or **Input** pen, and **Done** hides them again.
-- **Tool strip under the board** (docked, nothing floats over the writing): pens, **Region** (drag a box around the code and its blue input), **Whole page** (frame everything written), **Snippet** mode, the program-frame picker, the pseudocode level, a **Code** button for the side panel, and **Verify & run**.
+- **Board first.** The whiteboard fills the window. Excalidraw's own menus, tool bar and style panel are always hidden. Clicking the **Code** or **Input** pen opens the Boardroom drawing bar along the top of the board: **Pen**, **Eraser**, **Hand**, **Select**, **Lock tool**, **Text**, **Shapes** (rectangle, diamond, ellipse, arrow, line), **Laser** and **Image**, five stroke thicknesses and six ink colours. **Done** or Escape hides it again.
+- **Tool strip under the board** (docked, nothing floats over the writing): pens, zoom, **Region** (drag a box around the code and its blue input), **Whole page** (frame everything written), the C/Python toggle, the program-frame picker, the **Code mode** slider, a **Code** button for the side panel, and **Verify & run**. A moon/sun button in the top bar switches dark mode, remembered in the browser.
 - **Side panel** (closed until you press Run or Code): the editable **Code that runs** view, standard input, a collapsible **Frame size** control, and the Output, Handwriting, Cases, Libraries and History tabs. Opening it re-fits the selected frame so the board is not cut off.
-- **Snippet mode** wraps the board text in a saved template (headers, globals, helper functions, `main()`), built by clicking or dragging blocks. It applies to C at pseudocode level 1 (the language toggle sits in the tool strip); text that already contains `main(` runs as written. The template is stored in the browser (`localStorage`).
+- **Code mode slider:** **Full program** compiles exactly what was written. **Snippet** (C) wraps the board text in a saved template (headers, globals, helper functions, `main()`) chosen with **Template**; text that already contains `main(` runs as written. **Algorithm** asks Gemini to write a program from plain-language steps, then runs it. Only Algorithm mode and handwriting recognition call Gemini on their own.
+- **Ask Gemini to fix:** after any failed run, in any mode, this button sends the failed code and its errors to Gemini and runs the corrected version. Nothing is sent unless the teacher clicks it, so intentional error demonstrations make no API calls. The board and the editor are unchanged; **Use this fix in the editor** copies the fix across.
 - Compiler errors are underlined in **Code that runs**, which is the exact text that was compiled and can be edited. The board itself is never marked. Edits in the editor do not change the board text; an "Edited by hand · reset" badge returns to the board's version.
 
 ## Run locally
@@ -91,17 +92,19 @@ Python supports literal stdin, indentation and blank lines, standard-library imp
 
 On Vercel, Python uses the configured Wandbox service, defaulting to `cpython-3.13.8`; `WANDBOX_PYTHON_COMPILER` can override that name. The local Bookworm image currently supplies Python 3.11.2. Use syntax available in your selected execution environment.
 
-## Gemini pseudocode slider
+## Code modes and Gemini
 
-Choose a level with the **Pseudocode level** slider above the run button. Selecting a level makes no API call. Clicking the run button sends the selected source and literal stdin to the server; Gemini uses the existing `GEMINI_API_KEY` and `OCR_MODEL` and targets the selected language. Handwriting first follows the existing OCR review and confirmation step at every level.
+Choose a mode with the **Code mode** slider in the tool strip. Changing mode makes no API call. Handwriting first follows the existing OCR review and confirmation step in every mode.
 
-| Level | What happens when you run |
-| --- | --- |
-| 1 · Check code | **Verify & run** compiles the original C as written. Gemini then uses the source and compiler messages to explain errors and show suggested corrected source. Suggestions are displayed as advice. Without Gemini configuration, the original C can still run. |
-| 2 · Fill the gaps | **Correct & run** asks Gemini to complete near-C, including omitted `main`, headers, declarations, and semicolons. For Python, Gemini completes colons, indentation, imports and syntax. The returned program runs with the selected input. |
-| 3 · Demonstrate an algorithm | **Generate & run** asks Gemini to turn a written algorithm or plain-language steps into a small C or Python demonstration, then runs it. Assumptions and the exact generated C appear with the real compiler output. |
+| Mode | What happens when you run | Gemini |
+| --- | --- | --- |
+| Full program | **Verify & run** compiles or runs the code exactly as written. | Never |
+| Snippet | **Verify & run** wraps C lines in the chosen template, then compiles. Python runs as written. | Never |
+| Algorithm | **Generate & run** asks Gemini to turn written steps into a small C or Python program, then runs it. | Every run |
 
-The board keeps the teacher's writing. For typed source, **Use this C on board** explicitly replaces it and switches to Level 1. Generated-code diagnostics refer to the displayed C rather than highlighting unrelated handwriting lines. Editing the board or changing level invalidates earlier results; editing during a Gemini request prevents pending generated C from compiling. Quota failures and timeouts are shown with safe Gemini diagnostics. Generated code can still contain errors; the compiler and execution service determine the actual result. Manual snapshot source files retain the selected board source. Automatic execution snapshots save the exact code that ran, including Gemini-generated code, while retaining the original drawing separately.
+After a failed run in any mode, **Ask Gemini to fix** sends the code that ran and its compiler or runtime messages to Gemini (`/api/pseudocode` with `level: 1`), shows the corrected program and explanation, and runs it. Without `GEMINI_API_KEY` the button is disabled.
+
+The board keeps the teacher's writing. For typed source, **Use this C on board** explicitly replaces it and switches to Full program mode. Generated-code diagnostics refer to the displayed C rather than highlighting unrelated handwriting lines. Editing the board or changing level invalidates earlier results; editing during a Gemini request prevents pending generated C from compiling. Quota failures and timeouts are shown with safe Gemini diagnostics. Generated code can still contain errors; the compiler and execution service determine the actual result. Manual snapshot source files retain the selected board source. Automatic execution snapshots save the exact code that ran, including Gemini-generated code, while retaining the original drawing separately.
 
 ## Multiple input cases
 

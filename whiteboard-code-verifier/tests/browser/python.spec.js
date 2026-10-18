@@ -61,7 +61,7 @@ test('Python cases run the selected language and download/import restores that l
   await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(program);
 });
 
-for (const level of [2, 3]) {
+for (const level of [3]) {
   test(`Python level ${level} generates Python and executes it without replacing the original writing`, async ({ page }) => {
     await page.route('**/api/health*', (route) => route.fulfill({ json: { runner: { available: true }, ocr: { available: true } } }));
     await page.route('**/api/pseudocode', (route) => {
@@ -73,7 +73,7 @@ for (const level of [2, 3]) {
     await pythonBoard(page);
     const original = level === 2 ? 'for value in range(3)\n    print(value)' : 'Print the numbers zero through two, one per line.';
     await page.getByLabel(/CODE THAT RUNS/).fill(original);
-    await page.getByRole('slider', { name: 'Pseudocode level' }).focus();
+    await page.getByRole('slider', { name: 'Code mode' }).focus();
     await page.keyboard.press('Home');
     for (let i = 1; i < level; i++) await page.keyboard.press('ArrowRight');
     await page.getByRole('button', { name: level === 2 ? 'Correct & run' : 'Generate & run', exact: true }).click();
