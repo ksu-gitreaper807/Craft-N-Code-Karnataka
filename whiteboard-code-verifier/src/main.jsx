@@ -355,7 +355,7 @@ function App() {
     try {
       let context = [failed.compilerOutput, failed.stderr].filter(Boolean).join('\n');
       while (new TextEncoder().encode(context).length > 16_384) context = context.slice(0, Math.floor(context.length * .8));
-      const draft = await requestJson('/api/pseudocode', { source: failed.source, stdin: failed.stdin, level: 1, compilerOutput: context, ...languagePayload(language) }, 65_000);
+      const draft = await requestJson('/api/pseudocode', { source: failed.source, stdin: failed.stdin, level: 1, compilerOutput: context, ...(failed.level === 2 && failed.status === 'compile_error' && language === 'c' ? { templateMode: true } : {}), ...languagePayload(language) }, 65_000);
       if (currentKey.current !== failed.key) throw new Error('The code changed while Gemini was working. Run again, then ask for a fix.');
       setPhase('compiler');
       const scene = boardScene();
@@ -827,7 +827,7 @@ function App() {
                 {running && <div className="empty-state" role="status"><div className="terminal-glyph">…</div><h3>{phase === 'gemini' ? 'Preparing the lesson with Gemini' : 'Testing the lesson'}</h3><p>{phase === 'gemini' ? `Reading your selected code or algorithm and preparing ${languageLabel}.` : `Checking ${languageLabel} and running the program.`}</p></div>}
                 {result && <div aria-live="polite"><div className={`result-status ${result.status === 'success' ? 'passed' : 'failed'}`}><span>{result.status === 'success' ? '✓' : '!'}</span><strong>{labels[result.status] ?? result.status}</strong><small>{result.durationMs} ms</small></div>
                   {result.status !== 'success' && !stale && <div className="fix-callout">
-                    <p>{result.fixed ? 'The corrected version still has an issue.' : 'Want Gemini to correct this and run the fixed version?'}</p>
+                    <p>{result.fixed ? 'The corrected version still has an issue.' : result.level === 2 && result.status === 'compile_error' && language === 'c' ? 'Template compile failed? Gemini can move templates, functions, classes, and structs to the correct scope and run the corrected program.' : 'Want Gemini to correct this and run the fixed version?'}</p>
                     <button className="fix-button" onClick={fixWithGemini} disabled={busy || !ocrHealth?.available}
                       title={ocrHealth?.available ? 'Gemini corrects the code and runs the corrected version. Your board is not changed.' : 'Set GEMINI_API_KEY to use Gemini fixes.'}><Icon name="sparkle" size={18} />Ask Gemini to fix</button>
                   </div>}
