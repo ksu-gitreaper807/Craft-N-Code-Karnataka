@@ -162,7 +162,7 @@ test('validation and traversal rejection happen before GitHub requests; failures
   }
 });
 
-test('hosted routes authorize before storage access and dispatch encoded folders, libraries, and sync', async () => {
+test('public hosted routes dispatch encoded folders, libraries, and sync without a token', async () => {
   const previous = process.env.BOARDROOM_API_TOKEN;
   process.env.BOARDROOM_API_TOKEN = 'classroom';
   const calls = [];
@@ -177,7 +177,7 @@ test('hosted routes authorize before storage access and dispatch encoded folders
     return { status: res.statusCode, body };
   }
   try {
-    assert.equal((await call('/api/snapshots', 'wrong')).status, 401);
+    assert.equal((await call('/api/snapshots', 'wrong')).status, 200);
     assert.equal(calls.length, 0);
     assert.deepEqual((await call('/api/snapshots')).body, { snapshots: [] });
     const id = '2026-10-17/12-30-05-lesson-1234abcd';

@@ -1,11 +1,12 @@
-import { sendJson, jsonBody, apiError } from '../server/hosted-api.mjs';
-import { sessionOperation } from '../server/session-auth.mjs';
+import { authorize, sendJson } from '../server/hosted-api.mjs';
 
+// Compatibility endpoint for clients upgrading from cookie authentication.
 export default function handler(req, res) {
-  try {
-    const body = req.method === 'POST' ? jsonBody(req, 1024) : null;
-    const result = sessionOperation(req, body, { token: process.env.BOARDROOM_API_TOKEN?.trim() });
-    if (result.cookie) res.setHeader('Set-Cookie', result.cookie);
-    sendJson(res, result.status, result.body);
-  } catch (error) { apiError(res, error); }
+  if (!authorize(req, res)) return;
+  if (!['GET', 'POST', 'DELETE'].includes(req.method)) return sendJson(res, 405, { error: 'Method not allowed.' });
+  res.setHeader('Set-Cookie', [
+    '__Host-boardroom-session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0',
+    'boardroom-session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0',
+  ]);
+  sendJson(res, 200, { access: 'public', authenticated: false });
 }

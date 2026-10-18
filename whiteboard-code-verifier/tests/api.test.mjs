@@ -44,7 +44,7 @@ test('pseudocode API preserves payload, authenticates, bounds uploads and never 
   const body = JSON.stringify({ source: 'print 5', stdin: '1\n', level: 3 });
   const invoke = (extra = {}) => base('/api/pseudocode', { method: 'POST', body,
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-private-token' }, ...extra });
-  assert.equal((await invoke({ headers: { 'Content-Type': 'application/json' } })).status, 401);
+  assert.equal((await invoke({ headers: { 'Content-Type': 'application/json' } })).status, 200);
   const response = await invoke();
   assert.equal(response.status, 200);
   assert.deepEqual(received, JSON.parse(body));
@@ -97,7 +97,7 @@ test('rejects malformed JSON, wrong content type, oversized bodies, and foreign 
   assert.equal((await base('/api/health', { headers: { Host: 'unrelated.example' } })).status, 403);
 });
 
-test('hosted API accepts only its frontend origin and a runtime access token', async (t) => {
+test('hosted API is public while preserving configured origin and host checks', async (t) => {
   const base = await start(t, { appOrigin: 'https://board-of-c.vercel.app', apiHost: 'api.example.com',
     apiToken: 'private-test-token', health: async () => ({ available: true }),
     ocrHealth: () => ({ available: true }) });
@@ -107,14 +107,14 @@ test('hosted API accepts only its frontend origin and a runtime access token', a
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers['access-control-allow-origin'], hosted.Origin);
   assert.match(preflight.headers['access-control-allow-headers'], /Authorization/);
-  assert.equal((await base('/api/health', { headers: hosted })).status, 401);
-  assert.equal((await base('/api/health', { headers: { ...hosted, Authorization: 'Bearer wrong' } })).status, 401);
+  assert.equal((await base('/api/health', { headers: hosted })).status, 200);
+  assert.equal((await base('/api/health', { headers: { ...hosted, Authorization: 'Bearer wrong' } })).status, 200);
   const authorized = await base('/api/health', { headers: { ...hosted, Authorization: 'Bearer private-test-token' } });
   assert.equal(authorized.status, 200);
   assert.equal(authorized.headers['access-control-allow-origin'], hosted.Origin);
   assert.equal((await base('/api/health', { headers: { ...hosted, Origin: 'https://untrusted.example', Authorization: 'Bearer private-test-token' } })).status, 403);
   assert.equal((await base('/api/health', { headers: { ...hosted, Host: 'untrusted.example', Authorization: 'Bearer private-test-token' } })).status, 403);
-  assert.throws(() => createHandler({ appOrigin: hosted.Origin, apiToken: '' }), /BOARDROOM_API_TOKEN/);
+  assert.doesNotThrow(() => createHandler({ appOrigin: hosted.Origin }));
 });
 
 test('caps concurrent runs, then releases slots after a failed runner', async (t) => {
@@ -243,19 +243,13 @@ test('Python API passes the selected language through readiness and execution, a
   assert.equal((await base('/api/health?language=javascript')).status, 400);
 });
 
-test('local API exchanges a token for a cookie and accepts cookie-authenticated requests', async t => {
-  const apiToken = 'local-test-secret';
-  const base = await start(t, { apiToken, health: async () => ({ available: true }) });
-  const signedIn = await base('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' }, body: JSON.stringify({ token: apiToken }) });
-  assert.equal(signedIn.status, 200);
-  assert.match(signedIn.headers['set-cookie'], /HttpOnly; SameSite=Strict/);
-  assert.ok(!signedIn.headers['set-cookie'].includes('Secure'));
-  assert.equal(signedIn.headers['access-control-allow-credentials'], 'true');
-  const cookie = signedIn.headers['set-cookie'].split(';')[0];
-  assert.equal((await base('/api/health', { headers: { Cookie: cookie } })).status, 200);
-  assert.equal((await base('/api/health')).status, 401);
-  assert.equal((await base('/api/health', { headers: { Cookie: cookie, 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
-  assert.equal((await base('/api/health', { headers: { Authorization: `Bearer ${apiToken}`, Origin: 'http://127.0.0.1:5173', 'Sec-Fetch-Site': 'cross-site' } })).status, 200);
-  const signedOut = await base('/api/session', { method: 'DELETE' });
-  assert.match(signedOut.headers['set-cookie'], /Max-Age=0/);
+test('public local APIs ignore old token configuration and retain origin checks', async t => {
+  const base = await start(t, { apiToken: 'obsolete-token', health: async () => ({ available: true }) });
+  assert.equal((await base('/api/health')).status, 200);
+  assert.equal((await (await base('/api/health')).json()).access, 'public');
+  assert.equal((await base('/api/health', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+  const legacy = await base('/api/session');
+  assert.equal(legacy.status, 200);
+  assert.equal((await legacy.json()).access, 'public');
+  assert.ok(legacy.headers['set-cookie'].every(value => value.includes('Max-Age=0')));
 });
