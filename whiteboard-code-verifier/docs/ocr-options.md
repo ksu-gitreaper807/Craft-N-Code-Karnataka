@@ -4,7 +4,7 @@
 
 Implement Gemini as the first provider, with a required teacher review step. This is a practical integration choice, not a claim that Gemini is the most accurate OCR system for handwritten C. No provider has yet been benchmarked on this project's real classroom handwriting.
 
-Gemini accepts images and schema-constrained output. The current request asks for source/input line text and ambiguity flags only, with `thinking_level: "low"`. Earlier requests also asked for alternate readings and approximate line boxes; these are omitted to reduce work and output size. The backend uses its [documented Interactions REST API](https://ai.google.dev/gemini-api/docs/interactions) and [structured output format](https://ai.google.dev/gemini-api/docs/structured-output). `OCR_MODEL` is configurable; the default follows the current documentation's `gemini-3.8-flash` examples. Model availability and quotas depend on the user's project.
+Gemini accepts images and schema-constrained output. The current request asks for source/input line text and ambiguity flags only, with `thinking_level: "low"`. Earlier requests also asked for alternate readings and approximate line boxes; these are omitted to reduce work and output size. The backend uses its [documented Interactions REST API](https://ai.google.dev/gemini-api/docs/interactions) and [structured output format](https://ai.google.dev/gemini-api/docs/structured-output). `OCR_MODEL` is configurable; the default is `gemini-3.6-flash`, the supported replacement for the deprecated `gemini-3.5-flash` alias. Model availability and quotas depend on the user's project.
 
 ## Options researched
 

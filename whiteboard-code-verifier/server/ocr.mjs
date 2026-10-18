@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const ENV_FILE = fileURLToPath(new URL('../.env', import.meta.url));
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
-const DEFAULT_MODEL = 'gemini-3.8-flash';
+const DEFAULT_MODEL = 'gemini-3.6-flash';
 export const OCR_BODY_LIMIT = 4 * 1024 * 1024;
 
 export function ocrConfiguration(env = process.env) {

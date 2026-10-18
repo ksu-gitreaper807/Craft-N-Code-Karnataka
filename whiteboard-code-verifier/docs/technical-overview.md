@@ -18,7 +18,7 @@ The teaching goal is to make classroom examples verifiable: demonstrate working 
 | Styling | Plain CSS | Responsive page layout, inspector, terminal, review controls, and diagnostic presentation |
 | Development/build | Vite 8.2.2 | Frontend development server, API proxy, and production assets |
 | API runtime | Node.js 22.12+ | HTTP endpoints, validation, Gemini requests, and Docker orchestration |
-| Handwriting recognition | Gemini API; default `gemini-3.8-flash` | Image transcription into structured code/input lines |
+| Handwriting recognition | Gemini API; default `gemini-3.6-flash` | Image transcription into structured code/input lines |
 | Execution boundary | Linux Docker Engine locally; configured Wandbox service on Vercel | Isolated C execution outside the application process |
 | Compiler image | `gcc:14.2.0-bookworm` | GCC toolchain and Debian-based execution environment |
 | Runner implementation | Python 3 standard library | Compilation, input delivery, deadlines, output collection, and diagnostic parsing |

@@ -54,7 +54,7 @@ Open **Libraries** to browse the compiled headers, see their public methods, and
 
 ### Configure handwriting recognition
 
-Copy `.env.example` to `.env` and set `GEMINI_API_KEY` using a key from your Google AI Studio project. Restart the API after changing it. Keep `.env` private; it is ignored by Git. `OCR_MODEL` selects the Gemini model available to your project. Typed code continues to work without a key.
+Copy `.env.example` to `.env` and set `GEMINI_API_KEY` using a key from your Google AI Studio project. Restart the API after changing it. Keep `.env` private; it is ignored by Git. `OCR_MODEL` selects the Gemini model available to your project (default: `gemini-3.6-flash` for both OCR and code assistance). Google routes the deprecated `gemini-3.5-flash` alias to 3.6 Flash. Typed code continues to work without a key.
 
 Start on the blank canvas and use **Pen: code** (black) and **Pen: input** (blue). Click **Select code & input** in the top bar and drag around the code and its input. Click **Read & review handwriting**. Compare the image with every extracted line, correct ambiguous readings, check the confirmation box, then click **Use confirmed code**. A separate **Verify & run** executes exactly that reviewed text. New strokes invalidate confirmation.
 
