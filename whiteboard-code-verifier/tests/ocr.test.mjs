@@ -188,5 +188,5 @@ test('Python OCR preserves indentation and passes explicit language context with
   } });
   assert.equal(result.language, 'python');
   assert.deepEqual(result.code.map((entry) => entry.text), ['if True', '    print(5)']);
-  assert.throws(() => validateOcrImages({ code: PNG, language: 'javascript' }), /C or Python/);
+  assert.throws(() => validateOcrImages({ code: PNG, language: 'javascript' }), /C\+\+ or Python/);
 });

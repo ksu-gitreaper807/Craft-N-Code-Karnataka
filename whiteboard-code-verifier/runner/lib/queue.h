@@ -27,7 +27,7 @@ static inline void queue_push_(Queue *queue, int value, int line) {
             board_contract_fail("queue", "capacity exceeds addressable storage", line);
         }
         size_t capacity = queue->capacity ? queue->capacity * 2 : 4;
-        int *data = malloc(capacity * sizeof *data);
+        int *data = (int *)malloc(capacity * sizeof *data);
         if (!data) board_contract_fail("queue", "allocation failed", line);
         for (size_t i = 0; i < queue->size; i++) {
             data[i] = queue->data[(queue->head + i) % queue->capacity];

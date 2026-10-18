@@ -23,7 +23,7 @@ export function hostedRunnerConfiguration(env = process.env) {
   }
 }
 
-const compilerFor = (language, env) => language === 'python' ? env.WANDBOX_PYTHON_COMPILER || 'cpython-3.13.8' : env.WANDBOX_C_COMPILER || 'gcc-head-c';
+const compilerFor = (language, env) => language === 'python' ? env.WANDBOX_PYTHON_COMPILER || 'cpython-3.13.8' : env.WANDBOX_CPP_COMPILER || 'gcc-head';
 
 export async function hostedRunnerHealth({ env = process.env, fetchImpl = fetch, language = 'c' } = {}) {
   const config = hostedRunnerConfiguration(env);
@@ -34,12 +34,12 @@ export async function hostedRunnerHealth({ env = process.env, fetchImpl = fetch,
     if (!validLanguage(language) || !Array.isArray(compilers) || !compilers.some((compiler) => compiler.name === compilerFor(language, env))) throw new Error();
     return { ...config, language };
   } catch {
-    return { available: false, engine: 'wandbox', message: `The hosted ${language === 'python' ? 'Python runtime' : 'C compiler'} is unavailable. Check WANDBOX_API_URL and its compiler name.` };
+    return { available: false, engine: 'wandbox', message: `The hosted ${language === 'python' ? 'Python runtime' : 'C++ compiler'} is unavailable. Check WANDBOX_API_URL and its compiler name.` };
   }
 }
 
 export function validateHostedProgram(body) {
-  if (!validLanguage(body?.language)) return 'Choose C or Python.';
+  if (!validLanguage(body?.language)) return 'Choose C++ or Python.';
   if (!body || typeof body.source !== 'string' || !body.source.trim()) return 'Write some code before running.';
   if (Buffer.byteLength(body.source) > 32_768 || body.source.includes('\0')) return 'Source must be at most 32 KiB without NUL characters.';
   if (body.stdin !== undefined && (typeof body.stdin !== 'string' || Buffer.byteLength(body.stdin) > 8192 || body.stdin.includes('\0'))) {
@@ -60,7 +60,7 @@ function diagnosticLines(output, language = 'c') {
         return [{ line, column: 1, severity: 'error', kind: /(?:SyntaxError|IndentationError|TabError):/.test(output) ? 'compiler' : 'runtime', message }];
       });
   }
-  return [...output.matchAll(/(?:board\.c|prog\.c):(\d+):(\d+):\s*(fatal error|error|warning):\s*([^\n]+)/g)]
+  return [...output.matchAll(/(?:board|prog)\.c(?:pp|c)?:(\d+):(\d+):\s*(fatal error|error|warning):\s*([^\n]+)/g)]
     .map((match) => ({ line: Number(match[1]), column: Number(match[2]),
       severity: match[3] === 'warning' ? 'warning' : 'error', message: match[4], kind: 'compiler' }));
 }
@@ -82,23 +82,23 @@ export async function runHostedProgram(body, { env = process.env, fetchImpl = fe
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ compiler: compilerFor(language, env),
         code: body.source, codes, stdin: body.stdin ?? '', save: false,
-        ...(language === 'c' ? { 'compiler-option-raw': '-I.' } : {}) }),
+        ...(language === 'c' ? { 'compiler-option-raw': '-I. -std=c++17' } : {}) }),
     });
   } catch {
-    throw Object.assign(new Error('Could not reach the hosted C compiler.'), { status: 502 });
+    throw Object.assign(new Error('Could not reach the hosted C++ compiler.'), { status: 502 });
   }
   if (!response.ok) throw Object.assign(new Error(response.status === 429 ?
-    'The hosted C compiler is rate limited. Try again shortly.' : `Hosted C compiler returned HTTP ${response.status}.`),
+    'The hosted C++ compiler is rate limited. Try again shortly.' : `Hosted C++ compiler returned HTTP ${response.status}.`),
   { status: response.status === 429 ? 429 : 502 });
   let data;
   try {
     const raw = await response.text();
     if (raw.length > 100_000) throw new Error();
     data = JSON.parse(raw);
-  } catch { throw Object.assign(new Error('Hosted C compiler returned an invalid response.'), { status: 502 }); }
+  } catch { throw Object.assign(new Error('Hosted C++ compiler returned an invalid response.'), { status: 502 }); }
   if (!data || typeof data.status !== 'string' || typeof data.program_output !== 'string' ||
       typeof data.compiler_error !== 'string' || typeof data.program_error !== 'string') {
-    throw Object.assign(new Error('Hosted C compiler returned an invalid result.'), { status: 502 });
+    throw Object.assign(new Error('Hosted C++ compiler returned an invalid result.'), { status: 502 });
   }
   const rawCompilerOutput = `${data.compiler_output ?? ''}${data.compiler_error}`;
   const rawStdout = data.program_output;

@@ -34,8 +34,8 @@ test('saves a portable bundle with literal source/input, dated unique folders, a
   assert.match(first.id, /^2026-10-17\/12-30-05-linked-list-lesson-[a-f0-9]{8}$/);
   assert.notEqual(first.id, second.id);
   assert.match(first.commit, /^[a-f0-9]{40,64}$/);
-  assert.deepEqual((await readdir(join(root, first.id))).sort(), ['.dockerignore', 'Dockerfile', 'board.c', 'board.excalidraw', 'build.sh', 'input.txt', 'lib.lock', 'replay.py', 'runner.py']);
-  assert.equal(await readFile(join(root, first.id, 'board.c'), 'utf8'), source);
+  assert.deepEqual((await readdir(join(root, first.id))).sort(), ['.dockerignore', 'Dockerfile', 'board.cpp', 'board.excalidraw', 'build.sh', 'input.txt', 'lib.lock', 'replay.py', 'runner.py']);
+  assert.equal(await readFile(join(root, first.id, 'board.cpp'), 'utf8'), source);
   assert.equal(await readFile(join(root, first.id, 'input.txt'), 'utf8'), '3 5\n\n');
   const history = await store.list();
   assert.deepEqual(history.map((entry) => entry.id), [second.id, first.id]);
@@ -58,7 +58,7 @@ test('requires current handwriting confirmation and saves the reviewed source wh
     confirmedAt: '2026-10-17T12:00:00Z', program: { source: reviewed, stdin: '3 5\n\n' },
     reviewed: { code: reviewed.split('\n'), stdin: ['3 5', '', ''] } };
   const saved = await store.save({ scene: board });
-  assert.equal(await readFile(join(root, saved.id, 'board.c'), 'utf8'), reviewed);
+  assert.equal(await readFile(join(root, saved.id, 'board.cpp'), 'utf8'), reviewed);
   assert.equal((await store.read(saved.id)).elements.find((el) => el.id === 'ink').type, 'freedraw');
   assert.deepEqual(JSON.parse(await readFile(join(root, saved.id, 'ocr.json'), 'utf8')), board.verifier.ocr);
   board.elements.at(-1).points.push([30, 30]);
@@ -85,7 +85,7 @@ test('rejects malformed or empty snapshots and traversal paths without creating 
   const empty = scene(); empty.elements = empty.elements.filter((el) => el.id !== 'code');
   await assert.rejects(store.save({ scene: empty }), /nonempty/);
   assert.deepEqual(await readdir(parent), []);
-  for (const id of ['../../.env', '2026-10-17/../../../.env', 'HEAD:board.c']) {
+  for (const id of ['../../.env', '2026-10-17/../../../.env', 'HEAD:board.cpp']) {
     await assert.rejects(store.read(id), (error) => error.status === 404);
   }
 });
@@ -98,7 +98,7 @@ test('preserves saved files when Git fails and releases the save lock for retry'
   const first = await store.save({ scene: scene() });
   assert.equal(first.commit, null);
   assert.match(first.warning, /Files were saved/);
-  assert.equal(await readFile(join(root, first.id, 'board.c'), 'utf8'), source);
+  assert.equal(await readFile(join(root, first.id, 'board.cpp'), 'utf8'), source);
   assert.deepEqual(await store.list(), []);
   await rm(join(root, '.git/index.lock'));
   const second = await store.save({ scene: scene() });
@@ -127,7 +127,7 @@ test('vendors only referenced curated headers and their internal dependencies, a
   const saved = await store.save({ scene: board });
   const folder = join(root, saved.id);
   assert.deepEqual((await readdir(join(folder, 'lib'))).sort(), ['board_contract.h', 'queue.h']);
-  assert.equal(await readFile(join(folder, 'board.c'), 'utf8'), board.elements[1].text);
+  assert.equal(await readFile(join(folder, 'board.cpp'), 'utf8'), board.elements[1].text);
   const comparison = await store.libraries(saved.id);
   assert.equal(comparison.legacy, false);
   assert.deepEqual(comparison.headers.map((header) => header.file), ['board_contract.h', 'queue.h']);
@@ -145,7 +145,7 @@ test('vendors only referenced curated headers and their internal dependencies, a
   assert.match((await execute('bash', [join(portable, 'build.sh'), '--verify'], { cwd: parent })).stdout, /integrity verified/);
   await writeFile(join(folder, 'lib/queue.h'), 'tampered');
   await assert.rejects(run(), (error) => error.code === 1 && /integrity check failed: lib\/queue.h/.test(error.stderr));
-  assert.equal(await readFile(join(folder, 'board.c'), 'utf8'), board.elements[1].text);
+  assert.equal(await readFile(join(folder, 'board.cpp'), 'utf8'), board.elements[1].text);
 });
 
 test('records OCR review provenance and only a result matching the saved program', async (t) => {
@@ -256,7 +256,7 @@ test('Python snapshots preserve language, save board.py and verify portable repl
   const saved = await store.save({ title: 'Python lesson', scene: board });
   const files = await readdir(join(root, saved.id));
   assert.ok(files.includes('board.py'));
-  assert.ok(!files.includes('board.c'));
+  assert.ok(!files.includes('board.cpp'));
   assert.ok(!files.includes('lib'));
   const manifest = JSON.parse(await readFile(join(root, saved.id, 'lib.lock'), 'utf8'));
   assert.equal(manifest.language, 'python');
@@ -282,7 +282,7 @@ test('automatic snapshots keep the whole original board but bundle the actual co
   assert.equal(reopened.elements.at(-1).text, 'Explanation outside the program');
   assert.equal(reopened.verifier.execution.source, actual);
   assert.equal(reopened.verifier.result, null);
-  assert.equal(await readFile(join(folder, 'board.c'), 'utf8'), actual);
+  assert.equal(await readFile(join(folder, 'board.cpp'), 'utf8'), actual);
   assert.equal(await readFile(join(folder, 'input.txt'), 'utf8'), 'different case input\n\n');
   assert.ok((await readdir(join(folder, 'lib'))).includes('queue.h'));
   const evidence = JSON.parse(await readFile(join(folder, 'result.json'), 'utf8'));
@@ -317,4 +317,22 @@ test('execution metadata cannot bypass language, size or handwriting review chec
   board.elements.push({ id: 'ink', type: 'freedraw', frameId: 'frame', x: 50, y: 50, width: 20, height: 20,
     strokeColor: '#1e1e1e', points: [[0, 0], [20, 20]] });
   await assert.rejects(store.save({ scene: board }), /confirm/);
+});
+
+
+test('new C++ bundles record their compiler and old .c manifests still verify', async (t) => {
+  const { root, store } = await archive(t);
+  const saved = await store.save({ scene: scene() });
+  const folder = join(root, saved.id);
+  const manifest = JSON.parse(await readFile(join(folder, 'lib.lock'), 'utf8'));
+  assert.equal(manifest.sourceFile, 'board.cpp');
+  assert.equal(manifest.compiler, 'g++');
+  assert.equal(manifest.standard, 'c++17');
+  const source = await readFile(join(folder, 'board.cpp'));
+  await writeFile(join(folder, 'board.c'), source);
+  manifest.files['board.c'] = manifest.files['board.cpp'];
+  delete manifest.files['board.cpp'];
+  delete manifest.sourceFile; delete manifest.compiler; delete manifest.standard;
+  await writeFile(join(folder, 'lib.lock'), JSON.stringify(manifest));
+  assert.match((await execute('bash', [join(folder, 'build.sh'), '--verify'])).stdout, /integrity verified/);
 });

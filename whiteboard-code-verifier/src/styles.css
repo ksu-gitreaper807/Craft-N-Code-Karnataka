@@ -281,7 +281,6 @@ pre { margin: 0; font: 11px/1.7 'SFMono-Regular', Consolas, 'Liberation Mono', m
 .statusline .icon-button { width: 28px; height: 28px; border: 0; background: transparent; font-size: 18px; }
 .link-button { border: 0; background: none; padding: 0; color: #70623e; text-decoration: underline; font-size: 12px; }
 .excalidraw .main-menu-trigger, .excalidraw .layer-ui__wrapper__top-right, .excalidraw .help-icon, .excalidraw .disable-zen-mode, .excalidraw .welcome-screen-center, .excalidraw .welcome-screen-decor { display: none !important; }
-.stage:not(.tools-open) .excalidraw .shapes-section, .stage:not(.tools-open) .excalidraw .App-menu__left, .stage:not(.tools-open) .excalidraw .layer-ui__wrapper__footer { display: none !important; }
 
 .topbar { overflow: hidden; }
 @media (max-width: 640px) { .blank-button .long { display: none; } .lesson-select select { max-width: 120px; } .topbar { gap: 8px; } }
@@ -314,3 +313,80 @@ pre { margin: 0; font: 11px/1.7 'SFMono-Regular', Consolas, 'Liberation Mono', m
 
 /* Navigation and Zoom */
 .tool.icon-only { padding: 0 10px; min-width: 38px; justify-content: center; }
+
+/* Excalidraw's own tool bar, style panel and footer stay hidden; the Boardroom drawing bar replaces them. */
+.excalidraw .shapes-section, .excalidraw .App-menu__left, .excalidraw .layer-ui__wrapper__footer, .excalidraw .HintViewer { display: none !important; }
+
+/* Drawing bar: shown only while a pen is in use. Large icons with short labels, wrapping instead of covering the board. */
+.draw-toolbar { position: absolute; top: 10px; left: 0; right: 0; margin-inline: auto; width: max-content; z-index: 4; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; max-width: calc(100% - 20px); padding: 6px 8px; background: #ffffffee; border: 1px solid #dce3d5; border-radius: 14px; box-shadow: 0 6px 20px #1e2a2422; backdrop-filter: blur(6px); }
+.draw-group { display: flex; align-items: center; gap: 2px; padding: 0 4px; }
+.draw-group + .draw-group { border-left: 1px solid #e3e8dc; padding-left: 8px; }
+.draw-tool { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 54px; height: 54px; padding: 0; border: 1px solid transparent; border-radius: 10px; background: transparent; color: #33452f; font-size: 10.5px; line-height: 1; }
+.draw-tool svg { width: 24px; height: 24px; }
+.draw-tool:hover { background: #edf2e9; }
+.draw-tool.active { background: #e3efdf; border-color: #8fb48d; color: #1e5542; font-weight: 600; }
+.draw-tool.draw-done { background: #23563f; color: #fff; margin-left: 4px; }
+.draw-tool.draw-done:hover { background: #17432e; }
+.shapes-menu { position: relative; }
+.shapes-popover { position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); display: flex; gap: 2px; padding: 6px; background: #fff; border: 1px solid #dce3d5; border-radius: 12px; box-shadow: 0 6px 20px #1e2a2422; z-index: 5; }
+.width-dot { display: grid; place-items: center; width: 34px; height: 54px; padding: 0; border: 1px solid transparent; border-radius: 9px; background: transparent; }
+.width-dot i { display: block; border-radius: 50%; background: #33452f; }
+.width-dot:hover { background: #edf2e9; }
+.width-dot.active { background: #e3efdf; border-color: #8fb48d; }
+.draw-colors { gap: 6px; }
+.draw-colors .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #c9d2c2; padding: 0; cursor: pointer; }
+.draw-colors .swatch.selected { box-shadow: 0 0 0 2px #23563f; }
+
+/* Code mode slider: a pill track with a sliding knob, the three mode names, and a one-line description. */
+.mode-control { gap: 12px; }
+.mode-slider { position: relative; width: 300px; display: grid; gap: 4px; }
+.mode-slider input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 34px; margin: 0; border-radius: 17px; cursor: pointer;
+  background: linear-gradient(90deg, #cfe6d3 0%, #8cc29a calc(var(--mode) * 50%), #e9ede5 calc(var(--mode) * 50%)); box-shadow: inset 0 2px 4px #0000001a; }
+.mode-slider input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 54px; height: 30px; border-radius: 15px; background: #fff; border: 0;
+  box-shadow: 0 2px 6px #1e2a2440, inset 0 0 0 1px #d7ddd2; background-image: linear-gradient(#23563f, #23563f); background-size: 3px 12px; background-repeat: no-repeat; background-position: center; }
+.mode-slider input[type=range]::-moz-range-thumb { width: 54px; height: 30px; border-radius: 15px; background: #fff; border: 0; box-shadow: 0 2px 6px #1e2a2440; }
+.mode-slider input[type=range]:disabled { opacity: .6; cursor: default; }
+.mode-stops { display: flex; justify-content: space-between; font-size: 11px; color: #7a8571; }
+.mode-stops span { cursor: pointer; user-select: none; }
+.mode-stops span.on { color: #1e5542; font-weight: 700; }
+.mode-text { margin: 0; display: grid; gap: 2px; max-width: 230px; font-size: 11px; line-height: 1.35; color: #64765b; }
+.mode-text strong { font-size: 13px; color: #1e5542; }
+
+/* Gemini fix offer: only after a failed run. */
+.fix-callout { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 10px 12px; border: 1px solid #c9d8f0; border-radius: 8px; background: #f2f6fd; }
+.fix-callout p { margin: 0; font-size: 12px; color: #3d5478; }
+.fix-button { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 14px; border: 1px solid #2f5fb0; border-radius: 8px; background: #2f5fb0; color: #fff; font-size: 13px; font-weight: 600; }
+.fix-button:hover:not(:disabled) { background: #244c8f; }
+
+/* Dark mode: the board uses Excalidraw's dark theme; the app chrome swaps its surfaces here. */
+.app-shell[data-theme='dark'] { background: #121614; color: #e3e8e0; }
+[data-theme='dark'] .topbar, [data-theme='dark'] .toolstrip, [data-theme='dark'] .inspector, [data-theme='dark'] .dock-side .result-tabs,
+[data-theme='dark'] .workspace, [data-theme='dark'] .stage, [data-theme='dark'] .panel-divider { background: #171c19; border-color: #2c342e; color: #e3e8e0; }
+[data-theme='dark'] .statusline { background: #1d2620; color: #b9d3b4; border-color: #2c342e; }
+[data-theme='dark'] .statusline.error { background: #3a2220; color: #f2b4a6; }
+[data-theme='dark'] .brand, [data-theme='dark'] h2, [data-theme='dark'] h3, [data-theme='dark'] .panel-head h2 { color: #eef2eb; }
+[data-theme='dark'] .tool, [data-theme='dark'] .icon-button, [data-theme='dark'] .quiet-button, [data-theme='dark'] select, [data-theme='dark'] textarea, [data-theme='dark'] input:not([type=range]):not([type=radio]):not([type=checkbox]),
+[data-theme='dark'] .code-view, [data-theme='dark'] .input-editor, [data-theme='dark'] .frame-select, [data-theme='dark'] .board-tab, [data-theme='dark'] .tab-new, [data-theme='dark'] .lesson-select select,
+[data-theme='dark'] .toolstrip .language-toggle label, [data-theme='dark'] .test-case-editor, [data-theme='dark'] .snapshot-history li, [data-theme='dark'] .ocr-lines li {
+  background: #212823; color: #e3e8e0; border-color: #39433b; }
+[data-theme='dark'] .tool:hover:not(:disabled), [data-theme='dark'] .icon-button:hover:not(:disabled), [data-theme='dark'] .quiet-button:hover { background: #2a332c; }
+[data-theme='dark'] .tool[aria-pressed='true'], [data-theme='dark'] .board-tab.active, [data-theme='dark'] .toolstrip .language-toggle label.selected { background: #2f4a37; border-color: #5f8f69; color: #e9f4e6; }
+[data-theme='dark'] .code-gutter { background: #1b211d; border-color: #39433b; color: #7d8a7a; }
+[data-theme='dark'] .code-input { color: #dfe9da; }
+[data-theme='dark'] .field-label, [data-theme='dark'] .panel-help, [data-theme='dark'] .mode-text, [data-theme='dark'] .mode-stops, [data-theme='dark'] .lesson-select, [data-theme='dark'] .result-tabs button { color: #9fae9a; }
+[data-theme='dark'] .mode-text strong, [data-theme='dark'] .mode-stops span.on, [data-theme='dark'] .result-tabs button[aria-selected='true'] { color: #a9dbb3; }
+[data-theme='dark'] .mode-slider input[type=range] { background: linear-gradient(90deg, #2c4a35 0%, #4f8a5d calc(var(--mode) * 50%), #2a302b calc(var(--mode) * 50%)); }
+[data-theme='dark'] .empty-state h3 { color: #c8d6c1; }
+[data-theme='dark'] .terminal-glyph { background: #212823; border-color: #39433b; }
+[data-theme='dark'] .draw-toolbar, [data-theme='dark'] .shapes-popover { background: #1d231fee; border-color: #39433b; }
+[data-theme='dark'] .draw-tool, [data-theme='dark'] .width-dot { color: #dfe9da; }
+[data-theme='dark'] .width-dot i { background: #dfe9da; }
+[data-theme='dark'] .draw-tool:hover, [data-theme='dark'] .width-dot:hover { background: #2a332c; }
+[data-theme='dark'] .draw-tool.active, [data-theme='dark'] .width-dot.active { background: #2f4a37; border-color: #5f8f69; color: #e9f4e6; }
+[data-theme='dark'] .fix-callout { background: #1c2536; border-color: #33466b; }
+[data-theme='dark'] .fix-callout p { color: #b9c9e6; }
+[data-theme='dark'] .badge { background: #233428; border-color: #3f6a4a; color: #b6dcbd; }
+[data-theme='dark'] .builder, [data-theme='dark'] .builder-foot { background: #1a201c; border-color: #39433b; color: #e3e8e0; }
+[data-theme='dark'] .chip, [data-theme='dark'] .zone li { background: #232a25; color: #e3e8e0; border-color: #39433b; }
+@media (max-width: 1100px) { .mode-text { display: none; } .mode-slider { width: 240px; } }
+@media (max-width: 640px) { .draw-tool { width: 46px; height: 46px; } .draw-tool span { display: none; } .width-dot { height: 46px; width: 28px; } }

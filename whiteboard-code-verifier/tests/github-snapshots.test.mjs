@@ -96,7 +96,7 @@ test('GitHub stores a complete atomic C bundle and fresh instances reopen commit
   const commit = remote.commits.get(saved.commit);
   const files = remote.trees.get(commit.tree.sha);
   assert.equal(files.get('README.md'), 'Archive');
-  assert.equal(files.get(`${saved.id}/board.c`), scene().elements[1].text);
+  assert.equal(files.get(`${saved.id}/board.cpp`), scene().elements[1].text);
   assert.equal(files.get(`${saved.id}/input.txt`), 'hello\n\n');
   const manifest = JSON.parse(files.get(`${saved.id}/lib.lock`));
   for (const [path, hash] of Object.entries(manifest.files)) {
@@ -119,9 +119,9 @@ test('Python archives preserve input and existing lessons when subsequent commit
   const second = await store.save({ scene: scene('python') });
   const files = remote.trees.get(remote.commits.get(second.commit).tree.sha);
   assert.equal(files.get(`${second.id}/board.py`), 'print(input())');
-  assert.ok(!files.has(`${second.id}/board.c`));
+  assert.ok(!files.has(`${second.id}/board.cpp`));
   assert.ok(!files.has(`${second.id}/lib/queue.h`));
-  assert.ok(files.has(`${first.id}/board.c`));
+  assert.ok(files.has(`${first.id}/board.cpp`));
   assert.equal((await store.read(second.id)).verifier.language, 'python');
   assert.deepEqual((await store.list()).map((entry) => entry.id), [second.id, first.id]);
 });
@@ -162,7 +162,7 @@ test('validation and traversal rejection happen before GitHub requests; failures
   }
 });
 
-test('hosted routes authorize before storage access and dispatch encoded folders, libraries, and sync', async () => {
+test('public hosted routes dispatch encoded folders, libraries, and sync without a token', async () => {
   const previous = process.env.BOARDROOM_API_TOKEN;
   process.env.BOARDROOM_API_TOKEN = 'classroom';
   const calls = [];
@@ -177,7 +177,7 @@ test('hosted routes authorize before storage access and dispatch encoded folders
     return { status: res.statusCode, body };
   }
   try {
-    assert.equal((await call('/api/snapshots', 'wrong')).status, 401);
+    assert.equal((await call('/api/snapshots', 'wrong')).status, 200);
     assert.equal(calls.length, 0);
     assert.deepEqual((await call('/api/snapshots')).body, { snapshots: [] });
     const id = '2026-10-17/12-30-05-lesson-1234abcd';

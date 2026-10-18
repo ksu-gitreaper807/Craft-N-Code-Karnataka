@@ -15,28 +15,21 @@ test('a static frontend explains the missing API and keeps board editing availab
   await expect(page.getByRole('button', { name: 'Read handwriting' })).toBeDisabled();
 });
 
-test('an unconfigured Vercel Function shows the missing setting', async ({ page }) => {
-  await page.route('**/api/health', (route) => route.fulfill({ status: 503,
-    json: { error: 'Set BOARDROOM_API_TOKEN in the Vercel project settings and redeploy.' } }));
-  await page.goto('/');
-  await page.getByLabel('Demo lesson').selectOption('sum');
-  await expect(page.locator('.inspector > .runner-notice span')).toContainText('Set BOARDROOM_API_TOKEN');
-});
-
-test('a hosted API access token is entered at runtime and sent on reconnect', async ({ page }) => {
-  await page.route('**/api/health', (route) => {
-    if (route.request().headers().authorization !== 'Bearer private-test-token') {
-      return route.fulfill({ status: 401, json: { error: 'A valid Boardroom API token is required.' } });
-    }
-    return route.fulfill({ json: { runner: { available: true }, ocr: { available: false, message: 'No Gemini key.' } } });
+test('public API health enables running without login controls or credentials', async ({ page }) => {
+  const seen = [];
+  await page.route('**/api/health', async route => {
+    seen.push(await route.request().allHeaders());
+    return route.fulfill({ json: { access: 'public', runner: { available: true }, ocr: { available: false } } });
   });
   await page.goto('/');
   await page.getByLabel('Demo lesson').selectOption('sum');
-  await expect(page.getByLabel('API ACCESS TOKEN')).toBeVisible();
-  await page.getByLabel('API ACCESS TOKEN').fill('private-test-token');
-  await page.getByRole('button', { name: 'Connect API' }).click();
   await expect(page.getByText('Runner ready')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Verify & run' })).toBeEnabled();
+  await openPanel(page);
+  await expect(page.getByLabel('API ACCESS TOKEN')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Connect API' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toHaveCount(0);
+  expect(seen.every(headers => !headers.authorization && !headers.cookie)).toBe(true);
 });
 
 test('a serverless API keeps C and handwriting available while explaining history storage', async ({ page }) => {

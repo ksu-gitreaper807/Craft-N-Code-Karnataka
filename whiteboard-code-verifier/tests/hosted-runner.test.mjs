@@ -16,9 +16,9 @@ test('hosted runner sends code, input, and teaching headers to C compiler', asyn
   });
   assert.equal(request.url, `${env.WANDBOX_API_URL}/compile.json`);
   const payload = JSON.parse(request.options.body);
-  assert.equal(payload.compiler, 'gcc-head-c');
+  assert.equal(payload.compiler, 'gcc-head');
   assert.equal(payload.stdin, '2\n');
-  assert.equal(payload['compiler-option-raw'], '-I.');
+  assert.equal(payload['compiler-option-raw'], '-I. -std=c++17');
   assert.deepEqual(payload.codes.map((file) => file.file), ['stack.h', 'linked_list.h', 'queue.h', 'search.h', 'board_contract.h']);
   assert.match(payload.codes.find((file) => file.file === 'queue.h').code, /#include "board_contract.h"/);
   assert.match(payload.codes.find((file) => file.file === 'board_contract.h').code, /#ifndef/);
@@ -29,7 +29,7 @@ test('hosted runner sends code, input, and teaching headers to C compiler', asyn
 test('hosted runner maps compiler errors to board diagnostics', async () => {
   const result = await runHostedProgram({ source: 'int main(void) { return 0 }' }, {
     env, readHeader, fetchImpl: async () => new Response(JSON.stringify({
-      status: '1', signal: '', compiler_output: '', compiler_error: 'prog.c:1:27: error: expected ‘;’ before ‘}’ token\n',
+      status: '1', signal: '', compiler_output: '', compiler_error: 'prog.cc:1:27: error: expected ‘;’ before ‘}’ token\n',
       program_output: '', program_error: '',
     }), { status: 200 }),
   });
@@ -47,7 +47,7 @@ test('hosted runner refuses invalid input and non-HTTPS compiler configuration',
 
 test('hosted health checks that the compiler offers C', async () => {
   const available = await hostedRunnerHealth({ env, fetchImpl: async () =>
-    new Response(JSON.stringify([{ name: 'gcc-head-c' }]), { status: 200 }) });
+    new Response(JSON.stringify([{ name: 'gcc-head' }]), { status: 200 }) });
   assert.equal(available.available, true);
   const unavailable = await hostedRunnerHealth({ env, fetchImpl: async () =>
     new Response(JSON.stringify([{ name: 'cpython' }]), { status: 200 }) });
@@ -89,6 +89,6 @@ test('hosted Python classifies syntax errors and maps runtime tracebacks', async
   }
   const ready = await hostedRunnerHealth({ env, language: 'python', fetchImpl: async () => new Response(JSON.stringify([{ name: 'cpython-3.13.8' }])) });
   assert.equal(ready.available, true);
-  const wrong = await hostedRunnerHealth({ env, language: 'python', fetchImpl: async () => new Response(JSON.stringify([{ name: 'gcc-head-c' }])) });
+  const wrong = await hostedRunnerHealth({ env, language: 'python', fetchImpl: async () => new Response(JSON.stringify([{ name: 'gcc-head' }])) });
   assert.equal(wrong.available, false);
 });

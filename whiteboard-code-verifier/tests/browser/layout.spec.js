@@ -20,15 +20,28 @@ test('keeps the board clean, opens the code panel on demand, and resizes it with
   await expect(page.getByRole('complementary')).toBeHidden();
   await expect(page.locator('.shapes-section')).toBeHidden();
   await expect(page.locator('.main-menu-trigger')).toBeHidden();
+  await expect(page.locator('.draw-toolbar')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('clean-board.png') });
   await page.getByRole('button', { name: 'Pen: code', exact: true }).click();
-  await expect(page.locator('.shapes-section')).toBeVisible();
-  await page.getByRole('button', { name: 'Close drawing tools' }).click();
+  const drawBar = page.getByRole('toolbar', { name: 'Drawing tools' });
+  await expect(drawBar).toBeVisible();
   await expect(page.locator('.shapes-section')).toBeHidden();
+  const order = await drawBar.locator(':scope > .draw-group .draw-tool, :scope > .draw-group > .shapes-menu > .draw-tool').evaluateAll((items) => items.map((item) => item.getAttribute('aria-label')));
+  expect(order).toEqual(['Pen', 'Eraser', 'Hand', 'Select', 'Lock tool', 'Text', 'Shapes', 'Laser', 'Image']);
+  await drawBar.getByRole('button', { name: 'Shapes' }).click();
+  await expect(page.getByRole('group', { name: 'Shapes' }).getByRole('button')).toHaveText(['Rectangle', 'Diamond', 'Ellipse', 'Arrow', 'Line']);
+  await page.getByRole('group', { name: 'Shapes' }).getByRole('button', { name: 'Ellipse' }).click();
+  await expect(drawBar.getByRole('button', { name: 'Shapes' })).toHaveAttribute('aria-pressed', 'true');
+  await drawBar.getByRole('button', { name: 'Laser' }).click();
+  await expect(drawBar.getByRole('button', { name: 'Laser' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(drawBar.getByRole('group', { name: 'Stroke thickness' }).getByRole('button')).toHaveCount(5);
+  await page.getByRole('button', { name: 'Close drawing tools' }).click();
+  await expect(page.locator('.draw-toolbar')).toHaveCount(0);
   await page.getByRole('button', { name: 'Show panel', exact: true }).click();
   await expect(page.getByRole('complementary')).toBeVisible();
   const withPanel = await canvas.boundingBox();
-  expect(withPanel.height).toBe(before.height);
+  // Toolbar text and font rounding can shift its border by a couple of pixels.
+  expect(Math.abs(withPanel.height - before.height)).toBeLessThanOrEqual(4);
   expect(withPanel.width).toBeLessThan(before.width - 300);
   const divider = page.getByRole('separator', { name: 'Resize code and results panel' });
   const handle = await divider.boundingBox();
@@ -121,7 +134,7 @@ test('browses curated headers and loads their examples onto the board', async ({
   await openPanel(page);
   await page.getByRole('tab', { name: 'Libraries', exact: true }).click();
   for (const library of libraries) {
-    await page.getByLabel('CURATED C LIBRARIES').selectOption(library.file);
+    await page.getByLabel('C++ LIBRARIES').selectOption(library.file);
     await expect(page.locator('.library-source')).toContainText('#ifndef');
     await expect(page.locator('.library-panel h3')).toHaveText(library.title);
     const expected = await readFile(new URL(`../../runner/lib/${library.file}`, import.meta.url), 'utf8');
@@ -166,4 +179,26 @@ test('keeps handwriting action above the panel toggle without clipping', async (
     expect(overflow).toBe(false);
     await page.screenshot({ path: testInfo.outputPath(`handwriting-actions-${width}.png`) });
   }
+});
+
+test('dark mode switches the app and board and is remembered after a reload', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('.excalidraw.theme--dark')).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', 'dark');
+  await page.getByRole('button', { name: 'Switch to light mode' }).click();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', 'light');
+});
+
+test('stroke thickness has five sizes and the chosen one stays selected', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Pen: code', exact: true }).click();
+  const widths = page.getByRole('group', { name: 'Stroke thickness' });
+  await expect(widths.getByRole('button')).toHaveCount(5);
+  await widths.getByRole('button', { name: 'Stroke 10' }).click();
+  await expect(widths.getByRole('button', { name: 'Stroke 10' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(widths.getByRole('button', { name: 'Stroke 2' })).toHaveAttribute('aria-pressed', 'false');
 });

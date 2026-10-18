@@ -9,3 +9,15 @@ export const PYTHON_PSEUDOCODE_LEVELS = [
   { value: 2, label: 'Fill the gaps', description: 'Gemini completes missing colons, indentation, imports and syntax, then runs the returned Python.' },
   { value: 3, label: 'Demonstrate an algorithm', description: 'Write an algorithm in plain language or pseudocode. Gemini creates and runs a small Python demonstration.' },
 ];
+
+// The run modes shown on the slider. Only Algorithm sends typed code to Gemini.
+export const CODE_MODES = [
+  { value: 1, label: 'Full program', description: 'Compiles exactly what you wrote. No corrections, no AI.' },
+  { value: 2, label: 'Snippet', description: 'Wraps your lines in your C++ template and compiles. If compilation fails, optionally ask Gemini to fix declarations and scope.' },
+  { value: 3, label: 'Algorithm', description: 'Gemini turns your steps into a program, then it runs.' },
+];
+export const PYTHON_CODE_MODES = [
+  { value: 1, label: 'Full program', description: 'Runs exactly what you wrote. No corrections, no AI.' },
+  { value: 2, label: 'Snippet', description: 'Templates are for C++, so Python runs as written. No AI.' },
+  { value: 3, label: 'Algorithm', description: 'Gemini turns your steps into Python, then it runs.' },
+];

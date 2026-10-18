@@ -19,13 +19,13 @@ const fixtures = lessons.map(lesson => {
     ...(lesson.stdin ? [{ type: 'text', id: 'input', frameId: 'frame', text: lesson.stdin,
       strokeColor: INPUT_COLOR, x: 80, y: 510, width: 60, fontSize: 18 }] : []),
   ];
-  return { id: lesson.id, ...extractProgram(elements, 'frame') };
+  return { id: lesson.id, expectedStdout: lesson.expectedStdout, ...extractProgram(elements, 'frame') };
 });
 console.log(JSON.stringify(fixtures));
 """
 
 
-@unittest.skipUnless(shutil.which('node') and shutil.which('gcc'), 'Node and GCC required')
+@unittest.skipUnless(shutil.which('node') and shutil.which('g++'), 'Node and GCC required')
 class DemoFlowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -34,6 +34,15 @@ class DemoFlowTests(unittest.TestCase):
             capture_output=True, text=True, check=True, timeout=5,
         )
         cls.programs = {item['id']: item for item in json.loads(extraction.stdout)}
+
+    def test_cpp_standard_library_examples(self):
+        for lesson_id, program in self.programs.items():
+            if not lesson_id.startswith('cpp-'):
+                continue
+            with self.subTest(lesson=lesson_id):
+                result = execute_fixture(program)
+                self.assertEqual(result['status'], 'success', result)
+                self.assertEqual(result['stdout'], program['expectedStdout'])
 
     def test_input_output_lesson(self):
         result = execute_fixture(self.programs['sum'])

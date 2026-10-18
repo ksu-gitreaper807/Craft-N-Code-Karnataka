@@ -1,6 +1,6 @@
 # Connect the Vercel frontend to a Docker API server
 
-This is the persistent-server option for Docker-based C execution, Gemini OCR, and Git-backed lesson snapshots. The frontend at `https://board-of-c.vercel.app` calls that server over HTTPS. If you want handwriting and hosted C compilation without your own server, use the [Vercel Functions setup](vercel-serverless.md) instead. Keep this deployment limited to trusted teachers; the token is a shared classroom access control, not a multi-user account system.
+This is the persistent-server option for Docker-based C execution, Gemini OCR, and Git-backed lesson snapshots. The frontend at `https://board-of-c.vercel.app` calls that server over HTTPS. If you want handwriting and hosted C compilation without your own server, use the [Vercel Functions setup](vercel-serverless.md) instead. API access is public; no login is required.
 
 ## If you do not have a server yet
 
@@ -21,7 +21,7 @@ On a fresh Ubuntu server, install Git, Docker Engine, and Caddy, and install Nod
    cp .env.example .env
    ```
 
-2. Generate a private token with `openssl rand -hex 32`. In the server's `.env`, set `BOARDROOM_API_TOKEN` to that value, `BOARDROOM_APP_ORIGIN=https://board-of-c.vercel.app`, and `GEMINI_API_KEY` if handwriting recognition is needed. Set `SNAPSHOT_DIR` to a persistent, writable location. Keep `.env` out of Git and readable only by the API account. `BOARDROOM_API_HOST=api.example.com` can be set if the reverse proxy preserves the external Host header.
+2. In the server's `.env`, set `BOARDROOM_APP_ORIGIN=https://board-of-c.vercel.app` and `GEMINI_API_KEY` if handwriting recognition is needed. Set `SNAPSHOT_DIR` to a persistent, writable location. Keep `.env` out of Git and readable only by the API account. `BOARDROOM_API_HOST=api.example.com` can be set if the reverse proxy preserves the external Host header.
 3. Keep Node bound to loopback. A Caddy site can terminate HTTPS and forward to it:
 
    ```caddyfile
@@ -52,8 +52,8 @@ On a fresh Ubuntu server, install Git, Docker Engine, and Caddy, and install Nod
    WantedBy=multi-user.target
    ```
 
-   Use your actual Node path and ensure the service account can write `SNAPSHOT_DIR`. The API refuses a hosted origin or host configuration without a token.
-4. In the Vercel project rooted at `whiteboard-code-verifier/`, set the **build-time** environment variable `VITE_BOARDROOM_API_ORIGIN=https://api.example.com` and redeploy. This value is a public hostname, never the token or Gemini key. On the deployed page, enter the API access token in the connection field. The browser keeps it in session storage for that tab session and sends it only to the configured API origin.
-5. Confirm `https://api.example.com/api/health` answers with HTTP 401 without a token, and that the Vercel page shows **Runner ready** after entering it. Test a typed lesson, then OCR if configured. Docker and the `whiteboard-runner:local` image must be available on the server. Snapshot Git synchronization requires a separate archive `origin` remote on the server.
+   Use your actual Node path and ensure the service account can write `SNAPSHOT_DIR`. API access requires no token.
+4. In the Vercel project rooted at `whiteboard-code-verifier/`, set `VITE_BOARDROOM_API_ORIGIN=https://api.example.com` and redeploy. This is a public hostname; Gemini and GitHub keys stay server-side. There is no token entry or cookie session.
+5. Confirm `https://api.example.com/api/health` answers HTTP 200 without credentials, and that the page shows **Runner ready**. Test a typed lesson, then OCR if configured. Docker and `whiteboard-runner:local` must be available. Snapshot Git synchronization requires a separate archive remote.
 
-The API allows CORS only from `BOARDROOM_APP_ORIGIN` and requires the token for every `/api/` request. Vercel preview URLs need their own explicit origin configuration or they remain disconnected. The access token and process-local rate limits are appropriate for a small trusted deployment; public multi-tenant use still requires individual authentication, stronger isolation, and deployment-level limits.
+CORS allows the configured frontend origin; preview URLs need their own origin configuration. Existing local request-size, concurrency and execution limits remain. `BOARDROOM_API_TOKEN` is no longer used.

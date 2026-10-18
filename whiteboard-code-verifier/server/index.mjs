@@ -2,7 +2,6 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, extname, resolve, sep } from 'node:path';
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { sandboxHealth, runSandbox } from './sandbox.mjs';
 import { hostedRunnerHealth, runHostedProgram } from './hosted-runner.mjs';
 import { loadOcrEnvironment, ocrConfiguration, recognizeHandwriting, OCR_BODY_LIMIT } from './ocr.mjs';
@@ -37,7 +36,7 @@ async function requestBody(req, limit = 65_536) {
 }
 
 export function validatePayload(body) {
-  if (!validLanguage(body?.language)) return 'Choose C or Python.';
+  if (!validLanguage(body?.language)) return 'Choose C++ or Python.';
   if (!body || typeof body.source !== 'string' || !body.source.trim()) return 'Write some code before running.';
   if (Buffer.byteLength(body.source) > 32_768 || body.source.includes('\0')) return 'Source must be at most 32 KiB without NUL characters.';
   if (body.stdin !== undefined && (typeof body.stdin !== 'string' || Buffer.byteLength(body.stdin) > 8192 || body.stdin.includes('\0'))) {
@@ -67,10 +66,7 @@ async function defaultRun(payload) {
 
 export function createHandler({ run = defaultRun, health = defaultHealth, now = Date.now,
   recognize = recognizeHandwriting, assist = assistPseudocode, ocrHealth = ocrConfiguration, snapshots = createSnapshotStore(),
-  appOrigin = process.env.BOARDROOM_APP_ORIGIN, apiHost = process.env.BOARDROOM_API_HOST,
-  apiToken = process.env.BOARDROOM_API_TOKEN } = {}) {
-  if ((appOrigin || apiHost) && !apiToken) throw new Error('BOARDROOM_API_TOKEN is required when exposing the API to a hosted frontend.');
-  const expectedToken = apiToken ? createHash('sha256').update(apiToken).digest() : null;
+  appOrigin = process.env.BOARDROOM_APP_ORIGIN, apiHost = process.env.BOARDROOM_API_HOST } = {}) {
   let active = 0;
   let activeOcr = 0;
   let rate = { start: 0, count: 0 };
@@ -93,7 +89,7 @@ export function createHandler({ run = defaultRun, health = defaultHealth, now = 
     if (req.headers.origin) {
       res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
       res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     }
 
@@ -104,16 +100,20 @@ export function createHandler({ run = defaultRun, health = defaultHealth, now = 
       res.writeHead(204);
       return res.end();
     }
-    if (pathname.startsWith('/api/') && expectedToken) {
-      const presented = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1] ?? '';
-      const digest = createHash('sha256').update(presented).digest();
-      if (!timingSafeEqual(digest, expectedToken)) return send(res, 401, { error: 'A valid Boardroom API token is required.' });
+    if (pathname.startsWith('/api/') && req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, { error: 'Use this site to access the API.' });
+    if (pathname === '/api/session') {
+      if (!['GET', 'POST', 'DELETE'].includes(req.method)) return send(res, 405, { error: 'Method not allowed.' });
+      res.setHeader('Set-Cookie', [
+        '__Host-boardroom-session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0',
+        'boardroom-session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0',
+      ]);
+      return send(res, 200, { access: 'public', authenticated: false });
     }
     try {
       if (pathname === '/api/health' && req.method === 'GET') {
         const language = new URL(req.url, 'http://localhost').searchParams.get('language') ?? 'c';
-        if (!validLanguage(language)) return send(res, 400, { error: 'Choose C or Python.' });
-        return send(res, 200, { service: 'whiteboard-code-verifier', runner: await health(language), ocr: ocrHealth() });
+        if (!validLanguage(language)) return send(res, 400, { error: 'Choose C++ or Python.' });
+        return send(res, 200, { service: 'whiteboard-code-verifier', access: 'public', runner: await health(language), ocr: ocrHealth() });
       }
       if (pathname === '/api/snapshots/sync' && req.method === 'GET') return send(res, 200, await snapshots.syncStatus());
       if (pathname === '/api/snapshots/sync' && req.method === 'POST') {

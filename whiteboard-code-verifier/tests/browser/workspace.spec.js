@@ -32,7 +32,7 @@ test('loads the canvas, edits code and input, and roundtrips a downloaded board'
   expect(scene.elements.some((el) => el.type === 'frame')).toBe(true);
   await page.getByLabel('Demo lesson').selectOption('stack');
   await expect(source).toHaveValue(lessons[2].source);
-  await page.locator('input[type=file]').setInputFiles(path);
+  await page.locator('input[type=file][accept=".excalidraw,.json"]').setInputFiles(path);
   await expect(source).toHaveValue(lessons[0].source);
   await expect(page.getByLabel('STANDARD INPUT · BLUE INK')).toHaveValue('4 6\n');
   expect(errors).toEqual([]);
@@ -102,7 +102,9 @@ test.describe('real Docker execution', () => {
     await importBoard(page, boardFile({ code: 'printf("%d\\n", 7);' }));
     await openPanel(page);
     await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue('printf("%d\\n", 7);');
-    await page.getByRole('button', { name: 'Snippet mode', exact: true }).click();
+    const slider = page.getByRole('slider', { name: 'Code mode' });
+    await slider.focus(); await slider.press('Home'); await slider.press('ArrowRight');
+    await page.getByRole('button', { name: 'Edit template' }).click();
     const dialog = page.getByRole('dialog', { name: 'Snippet mode: build your template' });
     await expect(dialog).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('snippet-builder.png') });
@@ -122,7 +124,7 @@ test.describe('real Docker execution', () => {
     await expect(page.locator('.code-gutter .mark-error')).toHaveText('3');
     // Turning the mode off gives back the board text exactly as written.
     await page.getByRole('button', { name: /Edited by hand/ }).click();
-    await page.getByRole('button', { name: 'Snippet mode', exact: true }).click();
+    await slider.focus(); await slider.press('Home');
     await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue('printf("%d\\n", 7);');
   });
 

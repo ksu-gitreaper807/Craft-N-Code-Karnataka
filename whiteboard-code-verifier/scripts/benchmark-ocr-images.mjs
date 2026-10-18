@@ -28,7 +28,7 @@ try {
  const page = await browser.newPage();
  for (const profile of profiles) {
   for (const sample of manifest) {
-   const input = [{ type: 'text', text: `${OCR_PROMPT}\nThe selected language is ${sample.language === 'python' ? 'Python 3' : 'C11'}. Preserve indentation and blank lines exactly. Never repair colons, indentation, declarations, or punctuation.` }];
+   const input = [{ type: 'text', text: `${OCR_PROMPT}\nThe selected language is ${sample.language === 'python' ? 'Python 3' : 'C++17'}. Preserve indentation and blank lines exactly. Never repair colons, indentation, declarations, or punctuation.` }];
    const captures = [];
    for (const channel of ['code', 'stdin']) {
     if (!sample[`${channel}Image`]) continue;

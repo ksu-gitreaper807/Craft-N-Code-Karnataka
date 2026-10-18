@@ -1,5 +1,5 @@
 export const LANGUAGES = [
-  { id: 'c', label: 'C', tag: 'C11', file: 'board.c' },
+  { id: 'c', label: 'C++', tag: 'C++17', file: 'board.cpp' },
   { id: 'python', label: 'Python', tag: 'Python 3', file: 'board.py' },
 ];
 

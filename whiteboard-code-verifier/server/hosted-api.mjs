@@ -1,5 +1,3 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
-
 export function sendJson(res, status, value) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -8,23 +6,15 @@ export function sendJson(res, status, value) {
   res.end(JSON.stringify(value));
 }
 
-export function authorize(req, res, env = process.env) {
-  const expected = env.BOARDROOM_API_TOKEN?.trim();
-  if (!expected) {
-    sendJson(res, 503, { error: 'Set BOARDROOM_API_TOKEN in the Vercel project settings and redeploy.' });
-    return false;
-  }
+export function authorize(req, res) {
   const origin = req.headers.origin;
   const host = req.headers['x-forwarded-host'] ?? req.headers.host;
   if (origin && origin !== `https://${host}` && origin !== `http://${host}`) {
     sendJson(res, 403, { error: 'Use this site to access the API.' });
     return false;
   }
-  const presented = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1] ?? '';
-  const expectedHash = createHash('sha256').update(expected).digest();
-  const presentedHash = createHash('sha256').update(presented).digest();
-  if (!timingSafeEqual(expectedHash, presentedHash)) {
-    sendJson(res, 401, { error: 'A valid Boardroom API token is required.' });
+  if (req.headers['sec-fetch-site'] === 'cross-site') {
+    sendJson(res, 403, { error: 'Use this site to access the API.' });
     return false;
   }
   return true;

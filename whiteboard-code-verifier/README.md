@@ -1,6 +1,6 @@
 # Boardroom — Whiteboard Code Verifier
 
-An executable whiteboard for teachers explaining C and Python. Handwrite or type code in an Excalidraw frame, supply input in blue, and run reviewed code through GCC or Python 3. Compiler and sanitizer diagnostics link back to the board instead of interrupting the lesson with a separate IDE.
+An executable whiteboard for teachers explaining C++ and Python. Handwrite or type code in an Excalidraw frame, supply input in blue, and run reviewed code through g++ or Python 3. Compiler and sanitizer diagnostics link back to the board instead of interrupting the lesson with a separate IDE.
 
 The application is self-contained in `whiteboard-code-verifier/`; hackathon submission materials are maintained separately.
 
@@ -24,10 +24,11 @@ See the [technical stack and project overview](docs/technical-overview.md) for t
 
 ## Layout and tools
 
-- **Board first.** The whiteboard fills the window. Excalidraw's own menus, tool bar and style panel stay hidden until you click **Code** or **Input** pen, and **Done** hides them again.
-- **Tool strip under the board** (docked, nothing floats over the writing): pens, **Region** (drag a box around the code and its blue input), **Whole page** (frame everything written), **Snippet** mode, the program-frame picker, the pseudocode level, a **Code** button for the side panel, and **Verify & run**.
+- **Board first.** The whiteboard fills the window. Excalidraw's own menus, tool bar and style panel are always hidden. Clicking the **Code** or **Input** pen opens the Boardroom drawing bar along the top of the board: **Pen**, **Eraser**, **Hand**, **Select**, **Lock tool**, **Text**, **Shapes** (rectangle, diamond, ellipse, arrow, line), **Laser** and **Image**, five stroke thicknesses and six ink colours. **Done** or Escape hides it again.
+- **Tool strip under the board** (docked, nothing floats over the writing): pens, zoom, **Region** (drag a box around the code and its blue input), **Whole page** (frame everything written), the C/Python toggle, the program-frame picker, the **Code mode** slider, a **Code** button for the side panel, and **Verify & run**. A moon/sun button in the top bar switches dark mode, remembered in the browser.
 - **Side panel** (closed until you press Run or Code): the editable **Code that runs** view, standard input, a collapsible **Frame size** control, and the Output, Handwriting, Cases, Libraries and History tabs. Opening it re-fits the selected frame so the board is not cut off.
-- **Snippet mode** wraps the board text in a saved template (headers, globals, helper functions, `main()`), built by clicking or dragging blocks. It applies to C at pseudocode level 1 (the language toggle sits in the tool strip); text that already contains `main(` runs as written. The template is stored in the browser (`localStorage`).
+- **Code mode slider:** **Full program** compiles exactly what was written. **Snippet** (C) wraps the board text in a saved template (headers, globals, helper functions, `main()`) chosen with **Template**; text that already contains `main(` runs as written. **Algorithm** asks Gemini to write a program from plain-language steps, then runs it. Only Algorithm mode and handwriting recognition call Gemini on their own.
+- **Ask Gemini to fix:** after any failed run, in any mode, this button sends the failed code and its errors to Gemini and runs the corrected version. Nothing is sent unless the teacher clicks it, so intentional error demonstrations make no API calls. The board and the editor are unchanged; **Use this fix in the editor** copies the fix across.
 - Compiler errors are underlined in **Code that runs**, which is the exact text that was compiled and can be edited. The board itself is never marked. Edits in the editor do not change the board text; an "Edited by hand · reset" badge returns to the board's version.
 
 ## Run locally
@@ -91,21 +92,23 @@ Python supports literal stdin, indentation and blank lines, standard-library imp
 
 On Vercel, Python uses the configured Wandbox service, defaulting to `cpython-3.13.8`; `WANDBOX_PYTHON_COMPILER` can override that name. The local Bookworm image currently supplies Python 3.11.2. Use syntax available in your selected execution environment.
 
-## Gemini pseudocode slider
+## Code modes and Gemini
 
-Choose a level with the **Pseudocode level** slider above the run button. Selecting a level makes no API call. Clicking the run button sends the selected source and literal stdin to the server; Gemini uses the existing `GEMINI_API_KEY` and `OCR_MODEL` and targets the selected language. Handwriting first follows the existing OCR review and confirmation step at every level.
+Choose a mode with the **Code mode** slider in the tool strip. Changing mode makes no API call. Handwriting first follows the existing OCR review and confirmation step in every mode.
 
-| Level | What happens when you run |
-| --- | --- |
-| 1 · Check code | **Verify & run** compiles the original C as written. Gemini then uses the source and compiler messages to explain errors and show suggested corrected source. Suggestions are displayed as advice. Without Gemini configuration, the original C can still run. |
-| 2 · Fill the gaps | **Correct & run** asks Gemini to complete near-C, including omitted `main`, headers, declarations, and semicolons. For Python, Gemini completes colons, indentation, imports and syntax. The returned program runs with the selected input. |
-| 3 · Demonstrate an algorithm | **Generate & run** asks Gemini to turn a written algorithm or plain-language steps into a small C or Python demonstration, then runs it. Assumptions and the exact generated C appear with the real compiler output. |
+| Mode | What happens when you run | Gemini |
+| --- | --- | --- |
+| Full program | **Verify & run** compiles or runs the code exactly as written. | Never |
+| Snippet | **Verify & run** wraps C lines in the chosen template, then compiles. Python runs as written. | Never |
+| Algorithm | **Generate & run** asks Gemini to turn written steps into a small C or Python program, then runs it. | Every run |
 
-The board keeps the teacher's writing. For typed source, **Use this C on board** explicitly replaces it and switches to Level 1. Generated-code diagnostics refer to the displayed C rather than highlighting unrelated handwriting lines. Editing the board or changing level invalidates earlier results; editing during a Gemini request prevents pending generated C from compiling. Quota failures and timeouts are shown with safe Gemini diagnostics. Generated code can still contain errors; the compiler and execution service determine the actual result. Manual snapshot source files retain the selected board source. Automatic execution snapshots save the exact code that ran, including Gemini-generated code, while retaining the original drawing separately.
+After a failed run in any mode, **Ask Gemini to fix** sends the code that ran and its compiler or runtime messages to Gemini (`/api/pseudocode` with `level: 1`), shows the corrected program and explanation, and runs it. Without `GEMINI_API_KEY` the button is disabled.
+
+The board keeps the teacher's writing. For typed source, **Use this C on board** explicitly replaces it and switches to Full program mode. Generated-code diagnostics refer to the displayed C rather than highlighting unrelated handwriting lines. Editing the board or changing level invalidates earlier results; editing during a Gemini request prevents pending generated C from compiling. Quota failures and timeouts are shown with safe Gemini diagnostics. Generated code can still contain errors; the compiler and execution service determine the actual result. Manual snapshot source files retain the selected board source. Automatic execution snapshots save the exact code that ran, including Gemini-generated code, while retaining the original drawing separately.
 
 ## Multiple input cases
 
-Open **Cases** to add up to five named inputs for the selected board program. Each case can expect success, a compiler error, a runtime issue, a timeout, or an output limit; optionally compare stdout exactly. **Run cases** compiles/runs each input using the configured execution service and marks mismatches. At Levels 2–3, first generate/correct C with the main run button; Cases uses that displayed C. Changing the board or level marks earlier case results stale. Case definitions live in the current browser session and do not alter the blue input or become part of a lesson snapshot.
+Open **Cases** to add up to 20 named cases. Expect success, compiler/runtime errors, timeouts, or output limits. Stdout comparison defaults to exact characters (including newlines); choose trimming or whitespace normalization explicitly. Results show expected/actual output, the first difference, duration, stderr, and compiler diagnostics, with progress as each case finishes. **Stop cases** prevents remaining submissions and cancels the browser wait; a submitted server job may still finish. Suites persist in browser storage separately for C++ and Python. **Import suite** validates a versioned JSON file before replacing definitions; **Export suite** downloads a portable copy. Each completed response still creates its full-board snapshot; suite definitions themselves are not bundled.
 
 ## Try a lesson
 
@@ -131,13 +134,13 @@ snapshots/                         # separate local Git repository, created on f
   2026-10-17/                      # UTC date
     12-30-05-input-output-a1b2c3d4/ # UTC time, lesson title, unique suffix
       board.excalidraw
-      board.c
+      board.cpp
       input.txt
 ```
 
-Every click creates a new folder; existing snapshots are not overwritten. `board.excalidraw` retains the full canvas and selected-frame metadata. `board.c` contains the selected frame's exact typed or confirmed source, and `input.txt` preserves literal input, including blank lines. All snapshot files are recorded together with a `board: <lesson title>` Git commit. This archive is separate from the application repository and has no remote configured automatically.
+Every click creates a new folder; existing snapshots are not overwritten. `board.excalidraw` retains the full canvas and selected-frame metadata. `board.cpp` contains the selected frame's exact typed or confirmed source, and `input.txt` preserves literal input, including blank lines. All snapshot files are recorded together with a `board: <lesson title>` Git commit. This archive is separate from the application repository and has no remote configured automatically.
 
-The **History** tab lists the latest 30 snapshot commits. **Open saved board** restores the committed scene; save current work first because opening replaces the canvas. Saved execution results are not trusted on opening, and handwritten code requires fresh review before running or snapshotting again. The previously confirmed source remains available in the snapshot's `board.c` or `board.py`.
+The **History** tab lists the latest 30 snapshot commits. **Open saved board** restores the committed scene; save current work first because opening replaces the canvas. Saved execution results are not trusted on opening, and handwritten code requires fresh review before running or snapshotting again. The previously confirmed source remains available in the snapshot's `board.cpp` or `board.py`.
 
 From the app root, inspect the archive with:
 
@@ -208,7 +211,7 @@ The Node API uses only built-in modules. Python's standard library owns compilat
 
 `POST /api/ocr` accepts `{ "code": "data:image/png;base64,...", "stdin": "data:image/png;base64,..." }`; omit a channel when it contains no handwriting. It requests only literal line text and ambiguity flags, using Gemini low thinking to reduce reasoning and output overhead. The review API returns `box: null` and `alternatives: []` for these text-only lines, plus provider/model metadata and `requiresConfirmation: true`. Handwritten diagnostics remain available in the code editor; text-only OCR does not map them onto precise canvas locations. Set `language: "python"` for Python indentation and syntax context. It never compiles or runs anything. Requests are limited to 4 MiB, PNG dimensions to 2048 × 2048, one recognition at a time, and six attempts per minute. The provider deadline is 50 seconds, leaving time for a JSON error response before Vercel’s 60-second function limit.
 
-`POST /api/snapshots` accepts `{ "title": "Lesson name", "scene": { ... } }` and returns the dated folder ID and Git commit. Source and stdin are derived from the scene, with current OCR confirmation required for handwritten channels. Snapshot bodies are limited to 4 MiB and scene data to 2 MB. `GET /api/snapshots` lists recent history; `GET /api/snapshots/<id>` reads a committed scene. Hosted access uses an exact frontend origin and a runtime API token; see the deployment guide.
+`POST /api/snapshots` accepts `{ "title": "Lesson name", "scene": { ... } }` and returns the dated folder ID and Git commit. Source and stdin are derived from the scene, with current OCR confirmation required for handwritten channels. Snapshot bodies are limited to 4 MiB and scene data to 2 MB. `GET /api/snapshots` lists recent history; `GET /api/snapshots/<id>` reads a committed scene. Hosted access is public, with browser origin checks; see the deployment guide.
 
 `GET /api/snapshots/<id>/libraries` returns only allowlisted headers bundled in the committed lesson, alongside current application copies for comparison. It reads historical content from Git rather than mutable snapshot files.
 
@@ -249,3 +252,22 @@ This implementation was generated with OpenAI Codex from `../whiteboard-code-ver
 - The Gemini OCR call is not routed through Caveman; gateway credentials/configuration have not been provided.
 
 Keep changes focused; use two-space JavaScript/JSX indentation and four-space C/Python indentation. Run the focused test suite before contributing. Dependencies are pinned in `package.json` and `package-lock.json`; use `npm ci` for reproducible installation and update the lockfile when changing dependencies.
+
+
+## C++ compiler and compatibility
+
+The C-family toggle now selects **C++17**, compiled by `g++` from `board.cpp`; Python is unchanged. The existing internal language ID `c` is retained so saved boards and clients still open. New snapshots record `board.cpp`, compiler `g++`, and standard `c++17`; historical `.c` snapshots keep their frozen runner and replay assets. Existing C examples may need C++ changes, such as explicit `malloc`/`realloc` casts. The bundled teaching headers and memory lesson have been adjusted; the runner never silently repairs submitted source.
+
+Rebuild the local image with `npm run runner:build`. Hosted execution uses Wandbox's C++ compiler `gcc-head`, with `-std=c++17`; override it with `WANDBOX_CPP_COMPILER` (the previous `WANDBOX_C_COMPILER` setting is no longer used). The Libraries tab retains project teaching headers and adds runnable STL vector/sort, linked-list, queue, stack, and binary-search examples. Standard library headers are provided by the toolchain, not copied into snapshots.
+
+To roll back the application, deploy its previous commit and rebuild the local runner image from that version. Existing archived bundles retain their own source, compiler runner, headers, and replay script; do not rewrite them during a rollback. New C++ programs require the C++ runner when rerun in the application.
+
+
+In **Snippet (template) mode**, a failed compile offers **Ask Gemini to fix**. The optional request includes the assembled program and real compiler messages. Gemini can move function/class templates, free functions, and declarations to the correct scope while keeping executable statements in `main()`, preserving existing template helpers and stdin. The corrected full program is compiled separately and shown with an explanation; **Use this fix in the editor** adopts it explicitly. No AI request is made just for running template mode.
+
+
+## Public access
+
+Boardroom is public: no login, access token, or session cookie is required for compilation, Gemini OCR/assistance, or lesson snapshots. `BOARDROOM_API_TOKEN` is no longer used; an old value in hosting settings does not restrict access. Gemini and GitHub credentials remain server-side. Browser API requests omit cookies and authorization headers, and old browser-stored tokens are removed on upgrade.
+
+Host/origin checks, request bounds, compiler isolation, and existing local concurrency/rate limits remain in place. `/api/session` is retained only for older clients: it reports public access and expires obsolete session cookies. Users share the configured lesson archive. Rollback to an older authenticated deployment requires its original server access-token configuration and user sign-in again.

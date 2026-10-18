@@ -1,4 +1,5 @@
 export const HEADER_CHOICES = [
+  '#include <iostream>', '#include <vector>', '#include <algorithm>', '#include <queue>', '#include <stack>', '#include <list>',
   '#include <stdio.h>', '#include <stdlib.h>', '#include <string.h>', '#include <math.h>', '#include <stdbool.h>',
   '#include <stack.h>', '#include <linked_list.h>', '#include <queue.h>', '#include <search.h>',
 ];
@@ -9,13 +10,14 @@ export const FUNCTION_CHOICES = [
 ];
 
 export const PRESETS = [
+  { name: 'C++ STL', template: { headers: ['#include <iostream>', '#include <vector>', '#include <algorithm>'], globals: [], functions: [] } },
   { name: 'Basic I/O', template: { headers: ['#include <stdio.h>'], globals: [], functions: [] } },
   { name: 'Arrays & strings', template: { headers: ['#include <stdio.h>', '#include <stdlib.h>', '#include <string.h>'], globals: [], functions: [] } },
   { name: 'Math', template: { headers: ['#include <stdio.h>', '#include <math.h>'], globals: [], functions: [] } },
   { name: 'Data structures', template: { headers: ['#include <stdio.h>', '#include <stack.h>', '#include <linked_list.h>', '#include <queue.h>'], globals: [], functions: [] } },
 ];
 
-export const DEFAULT_TEMPLATE = PRESETS[0].template;
+export const DEFAULT_TEMPLATE = PRESETS.find(item => item.name === 'Basic I/O').template;
 export const ZONES = [
   { key: 'headers', title: 'Headers', choices: HEADER_CHOICES },
   { key: 'globals', title: 'Globals', choices: GLOBAL_CHOICES },

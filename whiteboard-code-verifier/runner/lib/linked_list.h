@@ -25,7 +25,7 @@ static inline size_t list_size(const LinkedList *list) { return list->size; }
 static inline int list_empty(const LinkedList *list) { return list->size == 0; }
 
 static inline ListNode *list_node_(int value, ListNode *next, int line) {
-    ListNode *node = malloc(sizeof *node);
+    ListNode *node = (ListNode *)malloc(sizeof *node);
     if (!node) board_contract_fail("linked_list", "allocation failed", line);
     node->value = value;
     node->next = next;

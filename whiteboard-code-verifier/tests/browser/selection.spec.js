@@ -44,7 +44,7 @@ test('starts blank and selects code plus input drawn anywhere, leaving outside w
 test('imports a canvas without a predefined frame and keeps mobile actions accessible', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await page.locator('input[type=file]').setInputFiles({ name: 'blank.excalidraw', mimeType: 'application/json',
+  await page.locator('input[type=file][accept=".excalidraw,.json"]').setInputFiles({ name: 'blank.excalidraw', mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({ type: 'excalidraw', elements: [] })) });
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Select code and input', exact: true })).toBeVisible();

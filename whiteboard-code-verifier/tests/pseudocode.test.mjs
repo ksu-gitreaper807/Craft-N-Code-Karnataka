@@ -51,7 +51,7 @@ test('named teaching libraries include their actual APIs and require angle-brack
     },
   });
   assert.match(instruction, /queue_init\(Queue \*queue\)/);
-  assert.match(instruction, /#include <header.h>/);
+  assert.match(instruction, /#include <header>/);
   assert.ok(!instruction.includes('BOARD_LIST_H'));
 });
 
@@ -97,5 +97,22 @@ test('Python assistance targets Python at each level and never reads C headers',
     assert.equal(result.language, 'python');
     assert.equal(result.source, 'print(5)\n');
   }
-  assert.throws(() => validatePseudocode({ source: 'x', level: 1, language: 'javascript' }), /C or Python/);
+  assert.throws(() => validatePseudocode({ source: 'x', level: 1, language: 'javascript' }), /C\+\+ or Python/);
+});
+
+test('template fixes receive assembled code and compiler evidence with C++ scope instructions', async () => {
+  const source = '#include <stdio.h>\nint main(){\n template<class T> T twice(T x){return x+x;}\n}';
+  const compilerOutput = 'board.cpp:3: error: a template declaration cannot appear at block scope';
+  let request;
+  await assistPseudocode({ source, compilerOutput, stdin: '2\n', level: 1, templateMode: true }, {
+    env, logger: () => {}, fetchImpl: async (_url, options) => { request = JSON.parse(options.body); return reply(proposal); },
+  });
+  assert.match(request.system_instruction, /function templates, class templates, free-function definitions/);
+  assert.match(request.system_instruction, /Classes and structs may be legal local declarations/);
+  assert.match(request.system_instruction, /exactly one main/);
+  assert.match(request.system_instruction, /Preserve existing headers, globals and helper functions/);
+  assert.deepEqual(JSON.parse(request.input[0].text), { source, stdin: '2\n', compilerOutput });
+  for (const invalid of [{ templateMode: 'yes' }, { templateMode: true, language: 'python' }, { templateMode: true, level: 3 }]) {
+    assert.throws(() => validatePseudocode({ source, level: 1, ...invalid }), /Template fixes/);
+  }
 });

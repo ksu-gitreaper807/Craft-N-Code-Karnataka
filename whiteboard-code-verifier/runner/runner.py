@@ -15,11 +15,16 @@ OUTPUT_LIMIT = 16_384
 ALLOWED_HEADERS = {
     "assert.h", "ctype.h", "errno.h", "float.h", "inttypes.h", "limits.h",
     "math.h", "stdbool.h", "stddef.h", "stdint.h", "stdio.h", "stdlib.h",
+    "iostream", "vector", "algorithm", "queue", "stack", "list", "deque", "map", "set",
+    "unordered_map", "unordered_set", "string", "array", "utility", "tuple", "numeric",
+    "functional", "limits", "cmath", "cstdio", "cstdlib", "cstring", "cassert",
+    "cstdint", "cstddef", "memory", "iterator", "iomanip", "sstream", "bitset", "optional",
+    "bits/stdc++.h",
     "string.h", "time.h", "unistd.h", "stack.h", "linked_list.h", "queue.h", "search.h",
 }
 LIB = Path(__file__).resolve().parent / "lib"
 FLAGS = [
-    "-std=c11", "-g", "-O0", "-Wall", "-Wextra", "-fno-omit-frame-pointer",
+    "-std=c++17", "-g", "-O0", "-Wall", "-Wextra", "-fno-omit-frame-pointer",
     "-fno-diagnostics-color", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
 ]
 
@@ -33,7 +38,7 @@ def strip_comments(source):
 
 def validate_source(source, language="c"):
     if language not in ("c", "python"):
-        return "Choose C or Python."
+        return "Choose C++ or Python."
     if not isinstance(source, str) or not source.strip():
         return "Write some code before running."
     if len(source.encode()) > 32_768 or "\0" in source:
@@ -43,7 +48,7 @@ def validate_source(source, language="c"):
     # Resolve continuations before checking includes; reject macro/absolute includes.
     normalized = strip_comments(re.sub(r"\\\r?\n", "", source))
     for match in re.finditer(r"^\s*#\s*(include\w*|import|embed)\b([^\n]*)", normalized, re.M):
-        header = re.fullmatch(r"\s*<([a-z0-9_.]+)>\s*", match[2])
+        header = re.fullmatch(r"\s*<([a-z0-9_./+]+)>\s*", match[2])
         if match[1] != "include" or not header or header[1] not in ALLOWED_HEADERS:
             return "Use supported standard headers or the curated library headers; macro and file-path includes are disabled."
     return None
@@ -95,7 +100,7 @@ def run_phase(command, cwd, stdin="", timeout=5, runtime=False, detect_leaks=Tru
 
 def parse_diagnostics(compiler_output, runtime_output):
     diagnostics = []
-    for match in re.finditer(r"board\.c:(\d+):(\d+): (fatal error|error|warning|note): ([^\n]+)", compiler_output):
+    for match in re.finditer(r"board\.c(?:pp)?:(\d+):(\d+): (fatal error|error|warning|note): ([^\n]+)", compiler_output):
         if match[3] == "note":
             continue
         diagnostics.append({
@@ -111,8 +116,8 @@ def parse_diagnostics(compiler_output, runtime_output):
         })
     else:
         summary = re.search(r"(?:ERROR: (?:AddressSanitizer|LeakSanitizer):|runtime error:) ([^\n]+)", runtime_output)
-        # For library failures the first board.c frame is the teacher's callsite.
-        locations = re.finditer(r"board\.c:(\d+)(?::(\d+))?", runtime_output)
+        # For library failures the first board.cpp (or historical board.c) frame is the teacher's callsite.
+        locations = re.finditer(r"board\.c(?:pp)?:(\d+)(?::(\d+))?", runtime_output)
         seen = set()
         for match in locations:
             line = int(match[1])
@@ -166,7 +171,7 @@ def teaching_notes(source):
         notes.append({"title": "First in, first out", "body":
                       "The queue wraps around a circular buffer and grows when full. Push is amortized O(1); "
                       "front and pop are O(1). queue_free releases the buffer."})
-    if re.search(r"\b(?:binary_search|lower_bound|upper_bound)\s*\(", code):
+    if re.search(r"(?<![:\w])(?:binary_search|lower_bound|upper_bound)\s*\(", code):
         notes.append({"title": "Halve the search space", "body":
                       "These searches require an ascending sorted array. Each step halves the remaining interval. "
                       "binary_search returns the first match or -1; bounds locate the start and end of equal values."})
@@ -222,9 +227,9 @@ def execute(payload, lib=LIB, *, detect_leaks=True):
         return result
     result["notes"] = teaching_notes(source)
     with tempfile.TemporaryDirectory(prefix="board-") as work:
-        Path(work, "board.c").write_text(source, encoding="utf-8")
+        Path(work, "board.cpp").write_text(source, encoding="utf-8")
         compile_result = run_phase(
-            ["gcc", *FLAGS, "-I", str(lib), "board.c", "-o", "board", "-lm"], work, timeout=10,
+            ["g++", *FLAGS, "-I", str(lib), "board.cpp", "-o", "board", "-lm"], work, timeout=10,
         )
         result["compilerOutput"] = compile_result["stdout"] + compile_result["stderr"]
         result["diagnostics"] = parse_diagnostics(result["compilerOutput"], "")

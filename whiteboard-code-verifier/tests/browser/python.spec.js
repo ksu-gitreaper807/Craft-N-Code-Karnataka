@@ -30,7 +30,7 @@ test('right-panel language toggle runs actual Python and maps syntax and runtime
   await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
   await expect(page.locator('.diagnostic').first()).toContainText('ZeroDivisionError');
   await expect(page.locator('.diagnostic').first()).toContainText('L3');
-  await page.getByRole('radio', { name: 'C', exact: true }).check();
+  await page.getByRole('radio', { name: 'C++', exact: true }).check();
   await expect(page.locator('.stale-notice')).toBeVisible();
 });
 
@@ -54,14 +54,14 @@ test('Python cases run the selected language and download/import restores that l
   const data = JSON.parse(await readFile(path, 'utf8'));
   expect(data.verifier.language).toBe('python');
   await page.getByLabel('Demo lesson').selectOption('sum');
-  await expect(page.getByRole('radio', { name: 'C', exact: true })).toBeChecked();
-  await page.locator('input[type=file]').setInputFiles(path);
+  await expect(page.getByRole('radio', { name: 'C++', exact: true })).toBeChecked();
+  await page.locator('input[type=file][accept=".excalidraw,.json"]').setInputFiles(path);
   await expect(page.getByRole('radio', { name: 'Python', exact: true })).toBeChecked();
   await openPanel(page);
   await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(program);
 });
 
-for (const level of [2, 3]) {
+for (const level of [3]) {
   test(`Python level ${level} generates Python and executes it without replacing the original writing`, async ({ page }) => {
     await page.route('**/api/health*', (route) => route.fulfill({ json: { runner: { available: true }, ocr: { available: true } } }));
     await page.route('**/api/pseudocode', (route) => {
@@ -73,7 +73,7 @@ for (const level of [2, 3]) {
     await pythonBoard(page);
     const original = level === 2 ? 'for value in range(3)\n    print(value)' : 'Print the numbers zero through two, one per line.';
     await page.getByLabel(/CODE THAT RUNS/).fill(original);
-    await page.getByRole('slider', { name: 'Pseudocode level' }).focus();
+    await page.getByRole('slider', { name: 'Code mode' }).focus();
     await page.keyboard.press('Home');
     for (let i = 1; i < level; i++) await page.keyboard.press('ArrowRight');
     await page.getByRole('button', { name: level === 2 ? 'Correct & run' : 'Generate & run', exact: true }).click();
@@ -105,7 +105,7 @@ test('Python OCR keeps indentation, requires confirmation and invalidates it on 
   await page.getByRole('button', { name: 'Use confirmed code', exact: true }).click();
   await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
   await expect(page.locator('.terminal pre')).toHaveText('0\n1\n');
-  await expect(page.getByRole('radio', { name: 'C', exact: true })).toBeEnabled();
-  await page.getByRole('radio', { name: 'C', exact: true }).check();
+  await expect(page.getByRole('radio', { name: 'C++', exact: true })).toBeEnabled();
+  await page.getByRole('radio', { name: 'C++', exact: true }).check();
   await expect(page.getByRole('button', { name: 'Read & review handwriting', exact: true })).toBeEnabled();
 });

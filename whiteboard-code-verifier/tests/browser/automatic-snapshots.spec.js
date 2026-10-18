@@ -58,7 +58,7 @@ for (const language of ['c', 'python']) {
     expect(scene.elements.some(el => el.id === 'second-frame')).toBe(true);
     expect(scene.elements.find(el => el.id === 'code').text).toBe(original);
     expect(scene.verifier.execution.result.status).toBe(result.status);
-    expect(await savedFile(snapshot, language === 'c' ? 'board.c' : 'board.py')).toBe(actual);
+    expect(await savedFile(snapshot, language === 'c' ? 'board.cpp' : 'board.py')).toBe(actual);
     expect(await savedFile(snapshot, 'input.txt')).toBe('3 5\n\n');
     expect(JSON.parse(await savedFile(snapshot, 'result.json')).result.status).toBe(result.status);
     await expect(page.getByLabel('Automatic snapshot status')).toContainText(snapshot.commit.slice(0, 8));
@@ -66,23 +66,23 @@ for (const language of ['c', 'python']) {
   });
 }
 
-test('a Gemini Level 2 run archives generated code while preserving the original complete drawing', async ({ page }) => {
+test('an Algorithm-mode run archives generated code while preserving the original complete drawing', async ({ page }) => {
   const corrected = '#include <stdio.h>\nint main(void) { puts("8"); return 0; }';
   await page.route('**/api/pseudocode', route => route.fulfill({ json: {
-    source: corrected, explanation: 'Completed the code.', issues: [], level: 2, provider: 'test-fixture', model: 'fixture-only',
+    source: corrected, explanation: 'Completed the code.', issues: [], level: 3, provider: 'test-fixture', model: 'fixture-only',
   } }));
   await page.route('**/api/run', route => route.fulfill({ json: success }));
   const original = await prepare(page, 'c', true);
-  const slider = page.getByRole('slider', { name: 'Pseudocode level' });
-  await slider.focus(); await slider.press('Home'); await slider.press('ArrowRight');
+  const slider = page.getByRole('slider', { name: 'Code mode' });
+  await slider.focus(); await slider.press('Home'); await slider.press('ArrowRight'); await slider.press('ArrowRight');
   const saved = savedResponse(page);
-  await page.getByRole('button', { name: 'Correct & run', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate & run', exact: true }).click();
   const snapshot = await (await saved).json();
-  expect(await savedFile(snapshot, 'board.c')).toBe(corrected);
+  expect(await savedFile(snapshot, 'board.cpp')).toBe(corrected);
   const scene = JSON.parse(await savedFile(snapshot, 'board.excalidraw'));
   expect(scene.elements.find(el => el.id === 'code').text).toBe(original);
   expect(scene.elements.some(el => el.id === 'outside-note')).toBe(true);
-  expect(scene.verifier.execution.level).toBe(2);
+  expect(scene.verifier.execution.level).toBe(3);
   await expect(page.locator('.terminal pre')).toHaveText('8\n');
 });
 
@@ -100,6 +100,8 @@ test('each input case commits a separate full-board snapshot with its own stdin 
   });
   await page.getByRole('button', { name: 'Run 2 cases', exact: true }).click();
   await expect(page.locator('.case-results li')).toHaveCount(2);
+  // Results are progressive; wait for the last snapshot as well as the last run.
+  await expect(page.getByRole('button', { name: 'Run 2 cases', exact: true })).toBeEnabled();
   await Promise.all(responses);
   expect(snapshots).toHaveLength(2);
   expect(snapshots[0].id).not.toBe(snapshots[1].id);
