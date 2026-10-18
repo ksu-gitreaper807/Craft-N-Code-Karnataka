@@ -252,3 +252,34 @@ test('confirmed OCR compiler errors map to the ink and downloads retain the revi
   expect(scene.elements.filter((el) => el.frameId === scene.verifier.frameId).every((el) => el.type === 'freedraw')).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('handwriting-diagnostic-fixture.png'), fullPage: true });
 });
+
+
+test('only reduces handwriting captures above the 1800-pixel longest-side limit', async ({ page }) => {
+  await page.route('**/api/health', route => route.fulfill({ json: {
+    runner: { available: false }, ocr: { available: true },
+  } }));
+  let capture;
+  await page.route('**/api/ocr', route => {
+    capture = route.request().postDataJSON();
+    return route.fulfill({ json: { code: [], stdin: [] } });
+  });
+  await page.goto('/');
+  for (const [width, height] of [[400, 100], [1768, 100], [2200, 100], [100, 2200]]) {
+    const file = boardFile({ code: '' });
+    const board = JSON.parse(file.buffer.toString());
+    board.elements.push({ id: 'sizing-ink', type: 'freedraw', frameId: 'frame', x: 40, y: 40,
+      width, height, strokeColor: '#1e1e1e', points: [[0, 0], [width, height]] });
+    file.buffer = Buffer.from(JSON.stringify(board));
+    await importBoard(page, file);
+    const response = page.waitForResponse('**/api/ocr');
+    await page.getByRole('button', { name: 'Read & review handwriting', exact: true }).click();
+    await response;
+    const png = Buffer.from(capture.code.split(',')[1], 'base64');
+    const actualWidth = png.readUInt32BE(16);
+    const actualHeight = png.readUInt32BE(20);
+    const scale = Math.min(1, 1800 / Math.max(width + 32, height + 32));
+    expect(actualWidth).toBe(Math.ceil((width + 32) * scale));
+    expect(actualHeight).toBe(Math.ceil((height + 32) * scale));
+    expect(Math.max(actualWidth, actualHeight)).toBeLessThanOrEqual(1800);
+  }
+});

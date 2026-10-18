@@ -19,7 +19,8 @@ export async function captureHandwriting(api, elements, frameId) {
       files: api.getFiles(), exportPadding: padding,
       appState: { exportBackground: true, viewBackgroundColor: '#ffffff', exportWithDarkMode: false },
       getDimensions: (width, height) => {
-        const scale = Math.min(2, 1800 / Math.max(width, height));
+        // Preserve native pixels unless the padded crop exceeds the OCR limit.
+        const scale = Math.min(1, 1800 / Math.max(width, height));
         return { width: Math.max(1, Math.ceil(width * scale)), height: Math.max(1, Math.ceil(height * scale)), scale };
       },
     });

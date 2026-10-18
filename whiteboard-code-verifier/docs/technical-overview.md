@@ -62,7 +62,7 @@ The workspace fills the browser viewport beneath compact controls. Browser fulls
 
 For typed text, `src/board.js` orders text elements by position and preserves their text, including blank lines. It also constructs a source map from compiler line numbers to text-element coordinates. Typed-only channels bypass OCR entirely.
 
-For handwritten channels, `src/capture.js` exports the relevant strokes and any text in that same channel. Code and stdin are captured separately, with padding and a white background. Frame borders and verifier overlays are excluded. Exported images are scaled to a maximum dimension of 1,800 pixels; the API accepts PNGs up to 2,048 × 2,048.
+For handwritten channels, `src/capture.js` exports the relevant strokes and any text in that same channel. Code and stdin are captured separately, with padding and a white background. Frame borders and verifier overlays are excluded. Crops at or below 1,800 pixels retain their native dimensions; larger crops are reduced proportionally to that longest-side limit. PNG encoding remains lossless; the API accepts PNGs up to 2,048 × 2,048.
 
 ### Language selection
 
