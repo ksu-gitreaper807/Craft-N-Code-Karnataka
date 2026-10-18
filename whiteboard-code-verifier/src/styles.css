@@ -303,7 +303,25 @@ pre { margin: 0; font: 11px/1.7 'SFMono-Regular', Consolas, 'Liberation Mono', m
 .board-tab .tab-close { background: none; border: none; color: inherit; padding: 0 2px; font-size: 12px; line-height: 1; cursor: pointer; opacity: .7; }
 .board-tab .tab-close:hover { opacity: 1; }
 .tab-new { display: grid; place-items: center; width: 26px; height: 26px; background: #fff; border: 1px solid #dce2d6; border-radius: 6px; color: #46543f; cursor: pointer; }
-.tab-new:hover { background: #edf2e9; }
+/* Dual Board Toggle & Selectors */
+.dual-board-toggle { font-size: 11px; font-weight: 600; color: #23563f; border-color: #bcd4c4; background: #f3f8f4; }
+.dual-board-toggle:hover { background: #e3f0e6; }
+.dual-board-toggle.active { background: #23563f; color: #fff; border-color: #23563f; }
+.dual-selectors { display: flex; align-items: center; gap: 6px; padding: 2px 8px; background: #f4f7f2; border: 1px solid #dce2d6; border-radius: 6px; }
+.dual-selectors select { font-size: 11px; font-weight: 500; background: #fff; border: 1px solid #dce2d6; border-radius: 4px; padding: 4px 6px; color: #33452f; }
+.dual-divider-icon { color: #8fa088; font-weight: bold; }
+
+/* Side-by-side Dual Canvas */
+.canvas-container--dual { display: flex; flex-direction: row; gap: 8px; padding: 6px; background: #e9eee4; }
+.board-frame-wrapper { position: relative; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: #fff; border-radius: 8px; border: 2px solid transparent; transition: border-color .15s, box-shadow .15s; }
+.board-frame--full { width: 100%; flex: 1; }
+.board-frame--half { flex: 1; min-width: 0; width: 50%; box-shadow: 0 2px 8px #0000000d; }
+.board-frame-wrapper .excalidraw { flex: 1; height: 100%; }
+.board-frame--focused { border-color: #23563f; box-shadow: 0 0 0 1px #23563f, 0 4px 12px #23563f1a; }
+.dual-board-header { display: flex; align-items: center; justify-content: space-between; padding: 5px 12px; background: #f6f8f4; border-bottom: 1px solid #e1e7dc; user-select: none; }
+.dual-board-title { font-size: 11px; font-weight: 600; color: #2c422f; }
+.dual-board-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; background: #dfe8da; color: #325739; padding: 2px 6px; border-radius: 4px; }
+.board-frame--focused .dual-board-badge { background: #23563f; color: #fff; }
 
 /* Pen Color Swatches */
 .color-swatches { display: flex; align-items: center; gap: 4px; padding: 0 4px; }
@@ -367,7 +385,8 @@ pre { margin: 0; font: 11px/1.7 'SFMono-Regular', Consolas, 'Liberation Mono', m
 [data-theme='dark'] .brand, [data-theme='dark'] h2, [data-theme='dark'] h3, [data-theme='dark'] .panel-head h2 { color: #eef2eb; }
 [data-theme='dark'] .tool, [data-theme='dark'] .icon-button, [data-theme='dark'] .quiet-button, [data-theme='dark'] select, [data-theme='dark'] textarea, [data-theme='dark'] input:not([type=range]):not([type=radio]):not([type=checkbox]),
 [data-theme='dark'] .code-view, [data-theme='dark'] .input-editor, [data-theme='dark'] .frame-select, [data-theme='dark'] .board-tab, [data-theme='dark'] .tab-new, [data-theme='dark'] .lesson-select select,
-[data-theme='dark'] .toolstrip .language-toggle label, [data-theme='dark'] .test-case-editor, [data-theme='dark'] .snapshot-history li, [data-theme='dark'] .ocr-lines li {
+[data-theme='dark'] .toolstrip .language-toggle label, [data-theme='dark'] .test-case-editor, [data-theme='dark'] .snapshot-history li, [data-theme='dark'] .ocr-lines li,
+[data-theme='dark'] .dual-selectors, [data-theme='dark'] .dual-board-header, [data-theme='dark'] .canvas-container--dual, [data-theme='dark'] .board-frame-wrapper {
   background: #212823; color: #e3e8e0; border-color: #39433b; }
 [data-theme='dark'] .tool:hover:not(:disabled), [data-theme='dark'] .icon-button:hover:not(:disabled), [data-theme='dark'] .quiet-button:hover { background: #2a332c; }
 [data-theme='dark'] .tool[aria-pressed='true'], [data-theme='dark'] .board-tab.active, [data-theme='dark'] .toolstrip .language-toggle label.selected { background: #2f4a37; border-color: #5f8f69; color: #e9f4e6; }

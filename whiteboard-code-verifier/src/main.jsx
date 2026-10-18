@@ -56,6 +56,7 @@ function Icon({ name, size = 18 }) {
     sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>,
     sparkle: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />,
     trash: <><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>,
+    dual: <><rect x="2" y="3" width="9" height="18" rx="2" /><rect x="13" y="3" width="9" height="18" rx="2" /></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.code}</svg>;
 }
@@ -120,6 +121,11 @@ function App() {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [tabs, setTabs] = useState([{ id: 'tab-1', title: 'Board 1', elements: [] }]);
   const [activeTabId, setActiveTabId] = useState('tab-1');
+  const [dualMode, setDualMode] = useState(false);
+  const [secondaryTabId, setSecondaryTabId] = useState('');
+  const [apiSecondary, setApiSecondary] = useState(null);
+  const [secondaryElements, setSecondaryElements] = useState([]);
+  const [focusedBoard, setFocusedBoard] = useState('primary'); // 'primary' | 'secondary'
   const [penColor, setPenColor] = useState(CODE_COLOR);
   const [pen, setPen] = useState('');
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -519,10 +525,12 @@ function App() {
     setNotice('Drag around the code and any blue input to select a program region. Press Escape to cancel.');
   }
 
+  const activeApi = focusedBoard === 'secondary' && apiSecondary ? apiSecondary : api;
+
   function cancelRegion() {
     selectingRegion.current = null;
     setRegionPending(false);
-    api?.setActiveTool({ type: 'selection' });
+    activeApi?.setActiveTool({ type: 'selection' });
   }
 
   function transcribeWholePage() {
@@ -540,30 +548,90 @@ function App() {
   }
 
   function selectPen(kind, customColor = null) {
-    if (!api) return;
+    if (!activeApi) return;
     cancelRegion();
     const color = customColor || (kind === 'code' ? CODE_COLOR : kind === 'input' ? INPUT_COLOR : penColor);
     if (customColor) setPenColor(customColor);
-    api.updateScene({ appState: { currentItemStrokeColor: color } });
-    api.setActiveTool({ type: 'freedraw' });
+    activeApi.updateScene({ appState: { currentItemStrokeColor: color } });
+    activeApi.setActiveTool({ type: 'freedraw' });
     setPen(kind);
     setToolsOpen(true);
   }
 
   function zoomBoard(delta) {
-    if (!api) return;
-    const currentZoom = api.getAppState().zoom.value;
+    if (!activeApi) return;
+    const currentZoom = activeApi.getAppState().zoom.value;
     const nextZoom = Math.min(3, Math.max(0.2, currentZoom + delta));
-    api.updateScene({ appState: { zoom: { value: nextZoom } } });
+    activeApi.updateScene({ appState: { zoom: { value: nextZoom } } });
   }
 
   function resetZoom() {
-    if (!api) return;
-    const sceneElements = api.getSceneElements().filter((el) => !isOverlay(el));
+    if (!activeApi) return;
+    const sceneElements = activeApi.getSceneElements().filter((el) => !isOverlay(el));
     if (sceneElements.length) {
-      api.scrollToContent(sceneElements, { fitToContent: true, maxZoom: 1 });
+      activeApi.scrollToContent(sceneElements, { fitToContent: true, maxZoom: 1 });
     } else {
-      api.updateScene({ appState: { zoom: { value: 1 }, scrollX: 0, scrollY: 0 } });
+      activeApi.updateScene({ appState: { zoom: { value: 1 }, scrollX: 0, scrollY: 0 } });
+    }
+  }
+
+  const onSecondaryChange = useCallback((next, appState) => {
+    setSecondaryElements([...next]);
+    if (secondaryTabId) {
+      setTabs((prev) => prev.map((t) => t.id === secondaryTabId ? { ...t, elements: [...next] } : t));
+    }
+  }, [secondaryTabId]);
+
+  function toggleDualMode() {
+    if (!api) return;
+    if (dualMode) {
+      // Exiting dual mode: persist secondary board if open
+      if (apiSecondary && secondaryTabId) {
+        const secEls = apiSecondary.getSceneElements().filter((el) => !isOverlay(el));
+        setTabs((prev) => prev.map((t) => t.id === secondaryTabId ? { ...t, elements: secEls } : t));
+      }
+      setDualMode(false);
+      setFocusedBoard('primary');
+      setNotice('Returned to single board view.');
+      return;
+    }
+
+    // Entering dual mode: need at least 2 boards
+    const currentEls = api.getSceneElements().filter((el) => !isOverlay(el));
+    let updatedTabs = tabs.map((t) => t.id === activeTabId ? { ...t, elements: currentEls } : t);
+    let chosenSecId = secondaryTabId;
+
+    if (updatedTabs.length < 2) {
+      const newId = `tab-${Date.now()}`;
+      const newTitle = `Board ${updatedTabs.length + 1}`;
+      updatedTabs = [...updatedTabs, { id: newId, title: newTitle, elements: [] }];
+      chosenSecId = newId;
+    } else if (!chosenSecId || chosenSecId === activeTabId || !updatedTabs.some((t) => t.id === chosenSecId)) {
+      const other = updatedTabs.find((t) => t.id !== activeTabId);
+      chosenSecId = other ? other.id : updatedTabs[0].id;
+    }
+
+    setTabs(updatedTabs);
+    setSecondaryTabId(chosenSecId);
+    setDualMode(true);
+    setNotice('Dual board view enabled: Two boards side-by-side.');
+  }
+
+  function changeDualBoards(firstId, secondId) {
+    if (firstId === secondId) return;
+    if (firstId && firstId !== activeTabId) {
+      switchTab(firstId);
+    }
+    if (secondId && secondId !== secondaryTabId) {
+      if (apiSecondary && secondaryTabId) {
+        const secEls = apiSecondary.getSceneElements().filter((el) => !isOverlay(el));
+        setTabs((prev) => prev.map((t) => t.id === secondaryTabId ? { ...t, elements: secEls } : t));
+      }
+      const targetSec = tabs.find((t) => t.id === secondId);
+      setSecondaryTabId(secondId);
+      if (apiSecondary && targetSec) {
+        apiSecondary.updateScene({ elements: targetSec.elements });
+      }
     }
   }
 
@@ -578,6 +646,14 @@ function App() {
       resetWork();
       setFrameId('');
       setNotice(`Switched to ${target.title}`);
+      if (dualMode && targetId === secondaryTabId) {
+        // Swap or choose other
+        const other = tabs.find((t) => t.id !== targetId);
+        if (other) {
+          setSecondaryTabId(other.id);
+          if (apiSecondary) apiSecondary.updateScene({ elements: other.elements });
+        }
+      }
     }
   }
 
@@ -586,12 +662,20 @@ function App() {
     const currentEls = api.getSceneElements().filter((el) => !isOverlay(el));
     const newId = `tab-${Date.now()}`;
     const newTitle = `Board ${tabs.length + 1}`;
-    setTabs((prev) => [...prev.map((t) => t.id === activeTabId ? { ...t, elements: currentEls } : t), { id: newId, title: newTitle, elements: [] }]);
-    setActiveTabId(newId);
-    api.updateScene({ elements: [] });
-    resetWork();
-    setFrameId('');
-    setNotice(`Opened ${newTitle}`);
+    const updated = [...tabs.map((t) => t.id === activeTabId ? { ...t, elements: currentEls } : t), { id: newId, title: newTitle, elements: [] }];
+    setTabs(updated);
+    if (dualMode) {
+      // In dual mode, new tab can be set as the secondary board
+      setSecondaryTabId(newId);
+      if (apiSecondary) apiSecondary.updateScene({ elements: [] });
+      setNotice(`Opened ${newTitle} on right board`);
+    } else {
+      setActiveTabId(newId);
+      api.updateScene({ elements: [] });
+      resetWork();
+      setFrameId('');
+      setNotice(`Opened ${newTitle}`);
+    }
   }
 
   function closeTab(e, closeId) {
@@ -606,6 +690,15 @@ function App() {
       resetWork();
       setFrameId('');
     }
+    if (secondaryTabId === closeId) {
+      const other = remaining.find((t) => t.id !== (activeTabId === closeId ? remaining[0].id : activeTabId));
+      if (other) {
+        setSecondaryTabId(other.id);
+        if (apiSecondary) apiSecondary.updateScene({ elements: other.elements });
+      } else {
+        setDualMode(false);
+      }
+    }
   }
 
   function closeTools() {
@@ -613,9 +706,9 @@ function App() {
   }
 
   function chooseTool(type) {
-    if (!api) return;
+    if (!activeApi) return;
     cancelRegion();
-    api.setActiveTool({ type, locked: toolLocked });
+    activeApi.setActiveTool({ type, locked: toolLocked });
     setActiveToolState(type);
     if (type !== 'freedraw') setPen('');
   }
@@ -623,12 +716,12 @@ function App() {
   function toggleLock() {
     const next = !toolLocked;
     setToolLocked(next);
-    api?.setActiveTool({ type: activeTool, locked: next });
+    activeApi?.setActiveTool({ type: activeTool, locked: next });
   }
 
   function chooseWidth(width) {
     setStrokeWidth(width);
-    api?.updateScene({ appState: { currentItemStrokeWidth: width } });
+    activeApi?.updateScene({ appState: { currentItemStrokeWidth: width } });
   }
 
   function chooseColor(color) {
@@ -682,6 +775,25 @@ function App() {
           ))}
           <button className="tab-new" aria-label="New whiteboard tab" onClick={addNewTab} title="Create new whiteboard tab"><Icon name="plus" size={14} /></button>
         </div>
+        <button className={`quiet-button dual-board-toggle ${dualMode ? 'active' : ''}`}
+          aria-label={dualMode ? 'Exit side-by-side view' : 'Display two boards side by side'}
+          title={dualMode ? 'Exit side-by-side view' : 'Display two boards side by side'}
+          onClick={toggleDualMode}
+          disabled={!api || busy}>
+          <Icon name="dual" size={16} />
+          <span className="long">{dualMode ? 'Single board' : 'Side-by-side'}</span>
+        </button>
+        {dualMode && (
+          <div className="dual-selectors" role="group" aria-label="Select dual boards">
+            <select aria-label="Left board" value={activeTabId} onChange={(e) => changeDualBoards(e.target.value, secondaryTabId)}>
+              {tabs.map((t) => <option key={`l-${t.id}`} value={t.id} disabled={t.id === secondaryTabId}>{t.title} (Left)</option>)}
+            </select>
+            <span className="dual-divider-icon" aria-hidden="true">|</span>
+            <select aria-label="Right board" value={secondaryTabId} onChange={(e) => changeDualBoards(activeTabId, e.target.value)}>
+              {tabs.map((t) => <option key={`r-${t.id}`} value={t.id} disabled={t.id === activeTabId}>{t.title} (Right)</option>)}
+            </select>
+          </div>
+        )}
         <label className="lesson-select"><span>Lesson</span><select aria-label="Demo lesson" value={lessonId} disabled={busy || !api} onChange={(event) => chooseLesson(event.target.value)}>{!lessonId && <option value="">Blank canvas</option>}{lessons.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
         <button className="quiet-button blank-button" aria-label="+ Blank canvas" onClick={newBlankBoard} disabled={!api || busy}><span aria-hidden="true">+</span><span className="long" aria-hidden="true"> Blank canvas</span></button>
         <div className="header-actions">
@@ -700,11 +812,37 @@ function App() {
       <main className={`stage${toolsOpen ? ' tools-open' : ''}`}>
         <WorkspaceLayout focused={!panelVisible} onResize={refreshCanvas}>
           <section className="board-pane" aria-label="Interactive lesson whiteboard">
-            <div className="canvas-container"><Excalidraw
-              initialData={{ elements: initial, appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 3, currentItemStrokeColor: CODE_COLOR }, scrollToContent: true }}
-              excalidrawAPI={setApi} onChange={onChange} theme={theme} name="Boardroom lesson"
-              UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, toggleTheme: false } }}
-            />
+            <div className={`canvas-container ${dualMode ? 'canvas-container--dual' : ''}`}>
+              <div className={`board-frame-wrapper ${dualMode ? 'board-frame--half' : 'board-frame--full'} ${focusedBoard === 'primary' ? 'board-frame--focused' : ''}`}
+                onClick={() => { if (dualMode && focusedBoard !== 'primary') setFocusedBoard('primary'); }}>
+                {dualMode && (
+                  <div className="dual-board-header">
+                    <span className="dual-board-title">{tabs.find((t) => t.id === activeTabId)?.title || 'Board 1'} (Active Verification)</span>
+                    <span className="dual-board-badge">Left</span>
+                  </div>
+                )}
+                <Excalidraw
+                  initialData={{ elements: initial, appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 3, currentItemStrokeColor: CODE_COLOR }, scrollToContent: true }}
+                  excalidrawAPI={setApi} onChange={onChange} theme={theme} name="Boardroom lesson"
+                  UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, toggleTheme: false } }}
+                />
+              </div>
+
+              {dualMode && (
+                <div className={`board-frame-wrapper board-frame--half ${focusedBoard === 'secondary' ? 'board-frame--focused' : ''}`}
+                  onClick={() => { if (focusedBoard !== 'secondary') setFocusedBoard('secondary'); }}>
+                  <div className="dual-board-header">
+                    <span className="dual-board-title">{tabs.find((t) => t.id === secondaryTabId)?.title || 'Board 2'}</span>
+                    <span className="dual-board-badge">Right</span>
+                  </div>
+                  <Excalidraw
+                    initialData={{ elements: tabs.find((t) => t.id === secondaryTabId)?.elements || [], appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 3, currentItemStrokeColor: CODE_COLOR }, scrollToContent: true }}
+                    excalidrawAPI={setApiSecondary} onChange={onSecondaryChange} theme={theme} name="Boardroom secondary"
+                    UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, toggleTheme: false } }}
+                  />
+                </div>
+              )}
+
               {toolsOpen && <DrawToolbar activeTool={activeTool} locked={toolLocked} strokeWidth={strokeWidth} color={penColor}
                 onTool={chooseTool} onLock={toggleLock} onStrokeWidth={chooseWidth} onColor={chooseColor} onClose={closeTools} />}
             </div>
