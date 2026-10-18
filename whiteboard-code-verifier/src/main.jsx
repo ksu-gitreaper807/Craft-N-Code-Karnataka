@@ -660,6 +660,7 @@ function App() {
               {(error || notice) ? <button className="icon-button" aria-label="Dismiss message" onClick={() => { setError(''); setNotice(''); }}>×</button> : <button className="link-button" onClick={checkHealth}>Check again</button>}
             </div>}
             <div className="toolstrip" role="toolbar" aria-label="Board tools">
+              <div className="toolstrip-controls">
               <div className="tool-group" role="group" aria-label="Draw">
                 <button className="tool" aria-label="Pen: code" aria-pressed={pen === 'code'} onClick={() => selectPen('code', CODE_COLOR)} disabled={!api || busy} title="Black ink is code"><i className="ink code-ink" /><span className="tool-label">Code</span></button>
                 <button className="tool" aria-label="Pen: input" aria-pressed={pen === 'input'} onClick={() => selectPen('input', INPUT_COLOR)} disabled={!api || busy} title="Blue ink is program input"><i className="ink input-ink" /><span className="tool-label">Input</span></button>
@@ -696,9 +697,10 @@ function App() {
                   aria-valuetext={`Level ${pseudoLevel}: ${pseudoLevels[pseudoLevel - 1].label}`} disabled={busy}
                   onChange={(event) => { setPseudoLevel(Number(event.target.value)); setPseudoDraft(null); setGeminiDiagnostic(null); setError(''); }} />
               </div>
+              </div>
               <div className="tool-group tool-run">
-                <button className="tool" aria-label={panelVisible ? 'Hide panel' : 'Show panel'} aria-pressed={panelVisible} onClick={() => setPanelVisible((visible) => !visible)}><Icon name="panel" /><span className="tool-label">Code</span></button>
                 <button className="run-button" onClick={run} disabled={runDisabled}><span className={busy ? 'spinner' : ''}>{!busy && <Icon name="play" size={18} />}</span>{runLabel}{!busy && <span className="run-button-hint" aria-hidden="true">{languageLabel} →</span>}</button>
+                <button className="tool" aria-label={panelVisible ? 'Hide panel' : 'Show panel'} aria-pressed={panelVisible} onClick={() => setPanelVisible((visible) => !visible)}><Icon name="panel" /><span className="tool-label">Code</span></button>
               </div>
             </div>
           </section>

@@ -251,7 +251,8 @@ pre { margin: 0; font: 11px/1.7 'SFMono-Regular', Consolas, 'Liberation Mono', m
 .frame-size { margin-top: 6px; font-size: 11px; color: #6d7b63; }
 .frame-size summary { cursor: pointer; padding: 4px 0; }
 .frame-size .frame-controls { padding: 6px 0; border: 0; background: none; }
-.toolstrip { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid #e1e5dc; background: #fbfcf8; overflow-x: auto; }
+.toolstrip { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid #e1e5dc; background: #fbfcf8; overflow: hidden; }
+.toolstrip-controls { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; overflow-x: auto; }
 .tool-group { display: flex; align-items: center; gap: 6px; flex: none; }
 .tool-group + .tool-group { padding-left: 10px; border-left: 1px solid #e3e8dc; }
 .tool { display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 13px; border: 1px solid #dce3d5; border-radius: 9px; background: #fff; font-size: 13px; color: #3e5236; white-space: nowrap; }
@@ -263,8 +264,9 @@ pre { margin: 0; font: 11px/1.7 'SFMono-Regular', Consolas, 'Liberation Mono', m
 .tool-frame .frame-select { padding: 9px 10px; min-height: 44px; }
 .tool-level { gap: 8px; font-size: 11px; color: #64765b; white-space: nowrap; }
 .tool-level input { width: 84px; accent-color: #23563f; cursor: pointer; }
-.tool-run { margin-left: auto; }
-.tool-run .run-button { width: auto; min-width: 190px; min-height: 44px; }
+.tool-run { margin-left: auto; flex-direction: column; align-items: stretch; width: 240px; max-width: calc(100% - 48px); }
+.tool-run .tool-label { display: inline; }
+.tool-run .run-button { width: 100%; min-width: 0; min-height: 44px; padding-block: 8px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .inspector > .runner-notice, .inspector > .error-notice, .inspector > .api-access { flex: none; }
 @media (max-width: 1100px) { .tool-level span { display: none; } }

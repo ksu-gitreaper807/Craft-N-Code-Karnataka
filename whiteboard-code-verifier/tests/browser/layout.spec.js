@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { lessons } from '../../src/lessons.js';
 import { libraries } from '../../src/libraries.js';
-import { openPanel } from './helpers.js';
+import { boardFile, importBoard, openPanel } from './helpers.js';
 
 test('keeps the board clean, opens the code panel on demand, and resizes it with mouse and keyboard', async ({ page }, testInfo) => {
   const errors = [];
@@ -129,4 +129,37 @@ test('browses curated headers and loads their examples onto the board', async ({
   }
   await page.getByRole('button', { name: 'Load example on board', exact: true }).click();
   await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(lessons.find((lesson) => lesson.id === 'search').source);
+});
+
+test('keeps handwriting action above the panel toggle without clipping', async ({ page }, testInfo) => {
+  await page.route('**/api/health', route => route.fulfill({ json: {
+    runner: { available: false }, ocr: { available: true },
+  } }));
+  await page.goto('/');
+  const file = boardFile({ code: 'int main(void) { return 0; }' });
+  const board = JSON.parse(file.buffer.toString());
+  board.elements.push({ id: 'layout-ink', type: 'freedraw', frameId: 'frame', x: 60, y: 80,
+    width: 40, height: 20, strokeColor: '#1e1e1e', points: [[0, 0], [40, 20]] });
+  file.buffer = Buffer.from(JSON.stringify(board));
+  await importBoard(page, file);
+  await openPanel(page);
+  for (const width of [1440, 1024, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    if (width > 800) {
+      await page.getByRole('separator', { name: 'Resize code and results panel' }).focus();
+      await page.keyboard.press('End');
+    }
+    const action = page.getByRole('button', { name: 'Read & review handwriting', exact: true });
+    await expect(action).toBeEnabled();
+    const run = await action.boundingBox();
+    await expect(page.getByRole('button', { name: 'Hide panel', exact: true }).locator('.tool-label')).toBeVisible();
+    const toggle = await page.getByRole('button', { name: 'Hide panel', exact: true }).boundingBox();
+    const pane = await page.locator('.board-pane').boundingBox();
+    expect(run.y + run.height).toBeLessThanOrEqual(toggle.y);
+    expect(run.x).toBeGreaterThanOrEqual(pane.x);
+    expect(run.x + run.width).toBeLessThanOrEqual(pane.x + pane.width);
+    expect(run.y + run.height).toBeLessThanOrEqual(pane.y + pane.height);
+    await expect(action).toBeInViewport({ ratio: 1 });
+    await page.screenshot({ path: testInfo.outputPath(`handwriting-actions-${width}.png`) });
+  }
 });
