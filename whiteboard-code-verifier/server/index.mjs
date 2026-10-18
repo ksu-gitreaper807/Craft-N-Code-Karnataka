@@ -75,10 +75,13 @@ export function createHandler({ run = defaultRun, health = defaultHealth, now = 
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     const port = req.socket.localPort;
+    const reqHost = req.headers.host;
+    const isCloudDeploy = Boolean(process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN || process.env.PORT);
     const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`, ...(apiHost ? [apiHost] : [])];
-    if (!allowedHosts.includes(req.headers.host)) return send(res, 403, { error: 'Use the local server address.' });
+    if (!isCloudDeploy && !allowedHosts.includes(reqHost)) return send(res, 403, { error: 'Use the local server address.' });
     const allowedOrigins = [
       ...allowedHosts.map((host) => `http://${host}`),
+      ...(reqHost ? [`https://${reqHost}`, `http://${reqHost}`] : []),
       'http://127.0.0.1:5173', 'http://localhost:5173',
       ...(appOrigin ? [appOrigin.replace(/\/$/, '')] : []),
     ];
@@ -198,8 +201,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const server = createApp({ snapshots });
   server.requestTimeout = 10_000;
   server.headersTimeout = 10_000;
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`Boardroom API: http://127.0.0.1:${port}`);
+  const host = process.env.HOST ?? (process.env.PORT || process.env.RAILWAY_STATIC_URL ? '0.0.0.0' : '127.0.0.1');
+  server.listen(port, host, () => {
+    console.log(`Boardroom API: http://${host}:${port}`);
     snapshots.startSync();
   });
   server.on('close', () => snapshots.stopSync());

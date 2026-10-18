@@ -1,23 +1,30 @@
+// Every header here is on the runner's allow list (runner/runner.py), so a chosen template always compiles.
 export const HEADER_CHOICES = [
   '#include <iostream>', '#include <vector>', '#include <algorithm>', '#include <queue>', '#include <stack>', '#include <list>',
+  '#include <deque>', '#include <map>', '#include <set>', '#include <unordered_map>', '#include <unordered_set>',
+  '#include <string>', '#include <array>', '#include <numeric>', '#include <utility>',
   '#include <stdio.h>', '#include <stdlib.h>', '#include <string.h>', '#include <math.h>', '#include <stdbool.h>',
   '#include <stack.h>', '#include <linked_list.h>', '#include <queue.h>', '#include <search.h>',
 ];
-export const GLOBAL_CHOICES = ['#define N 10', 'int counter = 0;'];
+export const GLOBAL_CHOICES = ['#define N 10', 'int counter = 0;', 'using namespace std;'];
 export const FUNCTION_CHOICES = [
   'static void swap(int *a, int *b) {\n    int t = *a;\n    *a = *b;\n    *b = t;\n}',
   'static void print_array(const int *values, int count) {\n    for (int i = 0; i < count; i++) printf("%d ", values[i]);\n    printf("\\n");\n}',
 ];
 
+// Presets reuse the project's teaching headers (runner/lib) and the C++ standard library; they never add main().
 export const PRESETS = [
-  { name: 'C++ STL', template: { headers: ['#include <iostream>', '#include <vector>', '#include <algorithm>'], globals: [], functions: [] } },
   { name: 'Basic I/O', template: { headers: ['#include <stdio.h>'], globals: [], functions: [] } },
-  { name: 'Arrays & strings', template: { headers: ['#include <stdio.h>', '#include <stdlib.h>', '#include <string.h>'], globals: [], functions: [] } },
+  { name: 'C++ STL', template: { headers: ['#include <iostream>', '#include <vector>', '#include <algorithm>'], globals: ['using namespace std;'], functions: [] } },
+  { name: 'Arrays & strings', template: { headers: ['#include <stdio.h>', '#include <stdlib.h>', '#include <string.h>', '#include <search.h>'], globals: [], functions: [FUNCTION_CHOICES[1]] } },
+  { name: 'Stack', template: { headers: ['#include <stdio.h>', '#include <stack.h>'], globals: [], functions: [] } },
+  { name: 'Queue', template: { headers: ['#include <stdio.h>', '#include <queue.h>'], globals: [], functions: [] } },
+  { name: 'Linked list', template: { headers: ['#include <stdio.h>', '#include <linked_list.h>'], globals: [], functions: [] } },
+  { name: 'Data structures', template: { headers: ['#include <stdio.h>', '#include <stack.h>', '#include <linked_list.h>', '#include <queue.h>', '#include <search.h>'], globals: [], functions: [] } },
   { name: 'Math', template: { headers: ['#include <stdio.h>', '#include <math.h>'], globals: [], functions: [] } },
-  { name: 'Data structures', template: { headers: ['#include <stdio.h>', '#include <stack.h>', '#include <linked_list.h>', '#include <queue.h>'], globals: [], functions: [] } },
 ];
 
-export const DEFAULT_TEMPLATE = PRESETS.find(item => item.name === 'Basic I/O').template;
+export const DEFAULT_TEMPLATE = PRESETS.find((item) => item.name === 'Basic I/O').template;
 export const ZONES = [
   { key: 'headers', title: 'Headers', choices: HEADER_CHOICES },
   { key: 'globals', title: 'Globals', choices: GLOBAL_CHOICES },
@@ -32,20 +39,63 @@ export function hasMain(snippet) {
   return /\bmain\s*\(/.test(snippet);
 }
 
-// Split the program so the builder can highlight the teacher's own lines.
-export function wrapParts(snippet, template) {
+// The template block: headers, globals and helpers only. It never contains main(), return 0; or a closing brace.
+export function templateBlock(template) {
   const block = (items) => items.length ? [...items.flatMap((item) => item.split('\n')), ''] : [];
-  const before = [...block(template.headers), ...block(template.globals), ...block(template.functions), 'int main(void) {'];
-  const body = snippet.replace(/\s+$/, '').split('\n').map((line) => line ? `    ${line}` : line);
-  return { before: before.join('\n'), body: body.join('\n'), after: '    return 0;\n}' };
+  return [...block(template.headers), ...block(template.globals), ...block(template.functions)].join('\n').replace(/\n+$/, '');
 }
 
-// Snippet mode never rewrites a program that already declares main().
+// When the teacher edits the snippet-mode editor, its leading #include/#define/using lines stay the template part.
+export function splitPreamble(text) {
+  const lines = text.split('\n');
+  let index = 0;
+  while (index < lines.length && (!lines[index].trim() || /^\s*(#|using\s+namespace\b)/.test(lines[index]))) index++;
+  return { preamble: lines.slice(0, index).join('\n').replace(/\s+$/, ''), body: lines.slice(index).join('\n') };
+}
+
+// Split the program so the builder can highlight the teacher's own lines. The snippet is not wrapped in main().
+export function wrapParts(snippet, template) {
+  return { before: templateBlock(template), body: snippet.replace(/\s+$/, ''), after: '' };
+}
+
+// Snippet mode shows the template followed by the teacher's lines; Gemini decides the structure when the code runs.
 export function composeSource(snippet, template, enabled) {
   if (!enabled || !snippet.trim()) return { source: snippet, wrapped: false, skipped: false };
-  if (hasMain(snippet)) return { source: snippet, wrapped: false, skipped: true };
-  const { before, body, after } = wrapParts(snippet, template);
-  return { source: `${before}\n${body}\n${after}`, wrapped: true, skipped: false };
+  const before = templateBlock(template);
+  return { source: before ? `${before}\n\n${snippet.replace(/\s+$/, '')}` : snippet, wrapped: Boolean(before), skipped: false };
+}
+
+const characters = (text) => {
+  const counts = new Map();
+  for (const char of text.replace(/\s+/g, '')) counts.set(char, (counts.get(char) ?? 0) + 1);
+  return counts;
+};
+// Scaffolding Gemini may add when it decides an entry point is appropriate; anything else means it changed the code.
+const ENTRY_HEADERS = ['intmain(){', 'intmain(void){'];
+const ENTRY_RETURNS = ['', 'return0;'];
+
+// The structure step may reorder and re-indent code and wrap loose statements in main(), but must not fix, add or remove code.
+export function checkStructure(original, structured) {
+  const before = characters(original);
+  const after = characters(structured);
+  const added = new Map();
+  for (const [char, count] of before) {
+    const extra = (after.get(char) ?? 0) - count;
+    if (extra < 0) return { ok: false, reason: `Gemini removed "${char}" from your code.` };
+  }
+  for (const [char, count] of after) {
+    const extra = count - (before.get(char) ?? 0);
+    if (extra > 0) added.set(char, extra);
+  }
+  if (!added.size) return { ok: true, entryAdded: false };
+  for (const header of ENTRY_HEADERS) {
+    for (const ret of ENTRY_RETURNS) {
+      const allowed = characters(`${header}${ret}}`);
+      if (allowed.size === added.size && [...allowed].every(([char, count]) => added.get(char) === count)) return { ok: true, entryAdded: true };
+    }
+  }
+  const extras = [...added].map(([char, count]) => count > 1 ? `${char} ×${count}` : char).join(' ');
+  return { ok: false, reason: `Gemini added code beyond an entry point (${extras}).` };
 }
 
 export function sanitizeTemplate(value) {

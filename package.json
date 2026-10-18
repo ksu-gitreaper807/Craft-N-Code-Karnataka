@@ -1,0 +1,13 @@
+{
+  "name": "craft-n-code-karnataka",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix whiteboard-code-verifier run build",
+    "start": "node whiteboard-code-verifier/server/index.mjs"
+  },
+  "dependencies": {
+    "whiteboard-code-verifier": "file:whiteboard-code-verifier"
+  }
+}

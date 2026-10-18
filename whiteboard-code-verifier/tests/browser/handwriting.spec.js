@@ -313,8 +313,8 @@ test('confirmed arrow drawings invoke list_from_arrows and run real linked nodes
   expect(runs).toBe(1);
 });
 
-function inputScanBoard({ codeInk = true } = {}) {
-  const file = boardFile({ code: lessons[0].source });
+function inputScanBoard({ codeInk = true, source = lessons[0].source } = {}) {
+  const file = boardFile({ code: source });
   const board = JSON.parse(file.buffer.toString());
   for (const [id, color, y] of [
     ...(codeInk ? [['black-scan-stroke', '#1e1e1e', 100]] : []),
@@ -446,4 +446,40 @@ test('new strokes invalidate an input scan and a full case suite rejects an extr
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('boardroom-test-cases:c')).cases.length)).toBe(20);
   await page.getByRole('button', { name: 'Use input for next run', exact: true }).click();
   await expect(page.getByLabel('STANDARD INPUT · BLUE INK', { exact: true })).toHaveValue('6 7');
+});
+
+
+test('scanned cases use the prepared C++ program in the latest snippet flow', async ({ page }) => {
+  await configureProviderFixture(page);
+  const source = 'int a, b;\nscanf("%d %d", &a, &b);\nprintf("%d\\n", a + b);';
+  const runs = [];
+  page.on('request', request => { if (request.url().endsWith('/api/run')) runs.push(request.postDataJSON()); });
+  await page.route('**/api/ocr', route => route.fulfill({ json: { provider: 'test-fixture', model: 'fixture-only', durationMs: 1,
+    code: [], stdin: [fixtureLine('7 8', 0)] } }));
+  await page.route('**/api/pseudocode', route => {
+    const body = route.request().postDataJSON();
+    expect(body.structure).toBe(true);
+    return route.fulfill({ json: { source: `int main() {\n${body.source}\nreturn 0;\n}`, explanation: 'Organized fixture.', issues: [],
+      level: 2, structure: true, provider: 'test-fixture', model: 'fixture-only', durationMs: 1 } });
+  });
+  await page.goto('/');
+  await importBoard(page, inputScanBoard({ codeInk: false, source }));
+  await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+  const slider = page.getByRole('slider', { name: 'Code mode' });
+  await slider.focus(); await slider.press('Home'); await slider.press('ArrowRight');
+  await page.getByRole('button', { name: 'Scan input', exact: true }).click();
+  await expect(page.getByLabel('Input line 1', { exact: true })).toHaveValue('7 8');
+  await page.getByRole('checkbox', { name: 'I checked the input against the handwriting.' }).check();
+  await page.getByRole('button', { name: 'Save input as test case', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Run 1 case', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Verify & run', exact: true }).click();
+  await expect(page.locator('.terminal pre')).toHaveText('15\n');
+  await page.getByRole('tab', { name: 'Cases', exact: true }).click();
+  await page.getByRole('button', { name: 'Run 1 case', exact: true }).click();
+  await expect(page.locator('.case-results')).toContainText('15');
+  await expect(page.getByRole('button', { name: 'Run 1 case', exact: true })).toBeEnabled();
+  expect(runs).toHaveLength(2);
+  expect(runs[1].source).toBe(runs[0].source);
+  expect(runs[1].stdin).toBe('7 8');
+  expect(runs[1].source).toContain('int main()');
 });

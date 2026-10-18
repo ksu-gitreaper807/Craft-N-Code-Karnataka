@@ -97,7 +97,14 @@ test.describe('real Docker execution', () => {
     await expect(page.locator('.squiggle')).toHaveCount(0);
   });
 
-  test('snippet mode runs the board text inside the template and reports lines of the full program', async ({ page }, testInfo) => {
+  test('snippet mode shows the template without main(), lets Gemini organize the snippet on every run, and compiles that result', async ({ page }, testInfo) => {
+    const structureCalls = [];
+    await page.route('**/api/pseudocode', (route) => {
+      const body = route.request().postDataJSON();
+      structureCalls.push(body);
+      return route.fulfill({ json: { source: `int main() {\n${body.source}\nreturn 0;\n}`, explanation: 'Wrapped the statements in main().', issues: [], level: 2, structure: true, provider: 'test', model: 'fixture', durationMs: 1 } });
+    });
+    await page.route('**/api/health*', (route) => route.fulfill({ json: { runner: { available: true }, ocr: { available: true }, snapshots: { available: true } } }));
     await page.goto('/');
     await importBoard(page, boardFile({ code: 'printf("%d\\n", 7);' }));
     await openPanel(page);
@@ -110,19 +117,27 @@ test.describe('real Docker execution', () => {
     await page.screenshot({ path: testInfo.outputPath('snippet-builder.png') });
     await dialog.getByRole('button', { name: '#include <math.h>' }).click();
     await expect(dialog.getByLabel('Full program preview')).toContainText('#include <math.h>');
+    await expect(dialog.getByLabel('Full program preview')).not.toContainText('int main');
     await dialog.getByRole('button', { name: 'Use this template' }).click();
     await expect(dialog).toBeHidden();
-    const wrapped = '#include <stdio.h>\n#include <math.h>\n\nint main(void) {\n    printf("%d\\n", 7);\n    return 0;\n}';
-    await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(wrapped);
+    const shown = '#include <stdio.h>\n#include <math.h>\n\nprintf("%d\\n", 7);';
+    await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue(shown);
     await page.getByRole('button', { name: 'Verify & run' }).click();
     await expect(page.locator('.terminal pre')).toHaveText('7\n');
-    // An error in a line the teacher did not write is shown, and editable, in the code that ran.
-    await page.getByLabel(/CODE THAT RUNS/).fill(wrapped.replace('#include <math.h>', '#include <math.h>\nint broken = ;'));
-    await page.getByRole('button', { name: 'Verify & run' }).click();
-    await expect(page.locator('.result-status')).toContainText('Check the syntax');
-    await expect(page.locator('.diagnostic').first()).toContainText('L3');
-    await expect(page.locator('.code-gutter .mark-error')).toHaveText('3');
+    expect(structureCalls).toHaveLength(1);
+    expect(structureCalls[0]).toMatchObject({ source: 'printf("%d\\n", 7);', structure: true, level: 2, templateContext: '#include <stdio.h>\n#include <math.h>' });
+    await expect(page.getByLabel('Organized C++', { exact: true })).toHaveText('#include <stdio.h>\n#include <math.h>\n\nint main() {\nprintf("%d\\n", 7);\nreturn 0;\n}\n');
+    // A syntax error is organized but never repaired, and every retry goes through Gemini again before compiling.
+    await page.getByLabel(/CODE THAT RUNS/).fill(shown.replace('printf', 'int broken = 1\nprintf'));
+    for (const attempt of [2, 3]) {
+      await page.getByRole('button', { name: 'Verify & run' }).click();
+      await expect(page.locator('.result-status')).toContainText('Check the syntax');
+      expect(structureCalls).toHaveLength(attempt);
+      expect(structureCalls.at(-1).source).toContain('int broken = 1\nprintf');
+    }
+    await expect(page.locator('.diagnostic').first()).toContainText(/L[56]/);
     // Turning the mode off gives back the board text exactly as written.
+    await expect(page.locator('.run-button')).toBeEnabled();
     await page.getByRole('button', { name: /Edited by hand/ }).click();
     await slider.focus(); await slider.press('Home');
     await expect(page.getByLabel(/CODE THAT RUNS/)).toHaveValue('printf("%d\\n", 7);');

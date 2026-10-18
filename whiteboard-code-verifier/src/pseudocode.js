@@ -13,7 +13,7 @@ export const PYTHON_PSEUDOCODE_LEVELS = [
 // The run modes shown on the slider. Only Algorithm sends typed code to Gemini.
 export const CODE_MODES = [
   { value: 1, label: 'Full program', description: 'Compiles exactly what you wrote. No corrections, no AI.' },
-  { value: 2, label: 'Snippet', description: 'Wraps your lines in your C++ template and compiles. If compilation fails, optionally ask Gemini to fix declarations and scope.' },
+  { value: 2, label: 'Snippet', description: 'Gemini arranges your lines into helpers and main() under your template, without fixing anything, then it compiles.' },
   { value: 3, label: 'Algorithm', description: 'Gemini turns your steps into a program, then it runs.' },
 ];
 export const PYTHON_CODE_MODES = [
